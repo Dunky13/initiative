@@ -7,6 +7,7 @@ export {
   Notification,
   nativeImage,
   nativeTheme,
+  net,
   Tray,
   WebContentsView,
 } from "electron";
