@@ -14,6 +14,7 @@ import pytest
 from app.core.messages import AIMessages
 from app.schemas.ai_settings import AIProvider, ConnectionScope, ResolvedAISettings
 from app.services import ai_generation, ai_provider, safe_http
+from app.services.ai_context import TaskContext
 from app.services.ai_provider import AIRequestError
 
 
@@ -87,17 +88,26 @@ async def test_a_checklist_is_asked_for_as_json_and_tidied(monkeypatch):
         ),
     )
     health = _resolving_to(monkeypatch)
+    context = TaskContext('{"task":{"title":"Ship it"}}', 2, 5)
+
+    async def read_task(*args, **kwargs):
+        return context
+
+    monkeypatch.setattr(ai_generation, "task_context", read_task)
 
     with patch(
         "app.services.webhook_target_url.socket.getaddrinfo",
         return_value=[(2, 0, 0, "", ("93.184.216.34", 0))],
     ):
-        steps = await ai_generation.generate_checklist(None, _User(), 1, _Task())
+        steps, told = await ai_generation.generate_checklist(None, _User(), 1, _Task())
 
     assert steps[0] == "Book the hall"
     assert len(steps) == 2 and steps[1].endswith("...")
-    system = sent[0]["messages"][0]["content"]
+    assert told is context
+    system, data = (m["content"] for m in sent[0]["messages"])
     assert '{"items":' in system
+    # The instructions come first and stay the same; the task follows them.
+    assert data == f"<context>{context.data}</context>"
     # The connection answered, so it is well.
     assert health == [(ConnectionScope.community, 3, 1, None)]
 

@@ -240,7 +240,7 @@ async def test_the_seat_writes_only_its_own_switches(engine):
     Eight columns: whether a second factor is required, whether the session
     standard is held to, the three that say what a notification may leave
     carrying, whether search ranks by engagement, how long a guest may stay,
-    and whether AI is on for it. A name, an icon, an owner
+    and whether AI features may be used. A name, an icon, an owner
     or a lifecycle status is not the seat's, and a new column on ``guilds`` is
     not either until a migration says so.
     """

@@ -129,6 +129,10 @@
   "tagTasks": {
     "loadError": "No se pudieron cargar las tareas."
   },
+  "ai": {
+    "fromComments_one": "Escrito sin el comentario de la tarea, que no cabía.",
+    "fromComments_other": "Escrito a partir de los {{read}} comentarios más recientes de {{count}}."
+  },
   "checklist": {
     "title": "Lista de verificación",
     "progressLabel": "Progreso de la lista",

@@ -1,7 +1,7 @@
 /**
  * `/settings/layouts` — how a tool lays out what it holds: each of its
- * layouts, when it was last changed, and, for a project, which list it opens
- * on, with the way into the layout editor.
+ * layouts, when it was last changed, and, for a project, which views it shows
+ * and the one it opens on, with the way into the layout editor.
  *
  * Changing them is a step above write access (the tool's owner, the
  * initiative's managers, or a community admin). The server decides, and says
@@ -18,7 +18,7 @@ import { useToolSettings } from "@/components/tools/settings/ToolSettingsContext
 import { ToolSettingsPermissionRequired } from "@/components/tools/settings/ToolSettingsGuard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useInstanceLayouts } from "@/hooks/useToolLayouts";
+import { instanceTarget, useInstanceLayouts } from "@/hooks/useToolLayouts";
 import { atLeast, useWidthClass } from "@/hooks/useWidthClass";
 import { useCommunityPath } from "@/lib/communityUrl";
 import { toolDetailRoute } from "@/lib/tools";
@@ -41,7 +41,7 @@ export const ToolSettingsLayoutsPage = () => {
         <CardDescription>{t("settingsDescription")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <LayoutList layouts={set.layouts} />
+        <LayoutList layouts={set.layouts} target={instanceTarget(tool, entity.id)} />
         {/* The editor needs a tablet-sized screen; it says so itself too. */}
         {wide ? (
           <Button asChild variant="outline" size="sm">

@@ -147,9 +147,17 @@ const DescriptionEditor = ({ item: task, label }: EditorProps) => {
           ? {
               label: t("edit.aiGenerate"),
               run: async () => {
-                const { description } = await generate.mutateAsync(task.id);
-                toast.success(t("edit.descriptionGenerated"));
-                return description;
+                const written = await generate.mutateAsync(task.id);
+                toast.success(t("edit.descriptionGenerated"), {
+                  description:
+                    written.comments_read < written.comments_total
+                      ? t("ai.fromComments", {
+                          read: written.comments_read,
+                          count: written.comments_total,
+                        })
+                      : undefined,
+                });
+                return written.description;
               },
             }
           : undefined

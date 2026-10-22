@@ -382,7 +382,8 @@
     "unsavedTitle": "Nicht gespeicherte Änderungen verwerfen?",
     "unsavedBody": "Du hast eine nicht gespeicherte Beschreibung. Wenn du jetzt gehst, geht sie verloren.",
     "leave": "Verlassen",
-    "stay": "Bleiben"
+    "stay": "Bleiben",
+    "undoSuggestion": "Vorschlag rückgängig machen"
   },
   "kinds": {
     "project": {

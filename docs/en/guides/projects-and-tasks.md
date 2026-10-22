@@ -204,14 +204,25 @@ Each task is a bar from its start date to its due date, on a timeline you scroll
 
 **Best for:** planning, seeing what has to finish before what, and noticing the Thursday onto which you have cheerfully scheduled six deadlines.
 
-- **Drag a bar** to move the task, or drag one end to change just that date.
+Moving things:
+
+- **Drag a bar** to move the task, or drag one end to change just that date. Move a task later and the tasks waiting on it are offered the same move, all the way down the line, so a slipped delivery doesn't leave six tasks starting before it arrives.
 - **Drag across an empty row** to give a task its dates.
-- **Arrows** run from a task to the ones [blocked by](mentions-and-links.md#connections) it. An arrow turns red when a task starts before the thing it's waiting on is done, which is your cue to have a word with somebody.
-- **Drag from the dot** at the end of a bar onto another task's row, and that task waits on this one. The arrow turns up straight away.
+- **No mouse?** The rows take the arrow keys: up and down to move, right and left to open and fold a task's parts, **Enter** to open one, and **Alt** with left or right to move it a day. Add **Shift** and only its due date moves.
+
+What depends on what:
+
+- **Arrows** run from a task to the ones [blocked by](mentions-and-links.md#connections) it. An arrow turns red when a task starts before the thing it's waiting on is done, which is your cue to have a word with somebody. Click one to take the link back.
+- **Drag from the dot** at the end of a bar onto another task's row, then pick whether that task waits on this one or is part of it.
 - A task's **parts** (the tasks that are **Part of** it) sit under it and fold away with it. The thin line over its row shows how far they stretch.
+- **Critical path** fades everything but the chain that decides when the work finishes. Shorten that chain and the project ends sooner; shorten anything else and it doesn't.
+- Tasks in **other projects** that yours are linked to sit in a band at the bottom, with their arrows. You can open them from here, but not move them.
+
+And the rest:
+
+- A **repeating task** shows its next few dates as dashed outlines along its row.
 - **Day**, **Week** and **Month** set how much fits on screen. **Today** brings you back.
 - **Group** it like the board, and each group gets a band of its own.
-- **No mouse?** The rows take the arrow keys: up and down to move, right and left to open and fold a task's parts, **Enter** to open one, and **Alt** with left or right to move it a day. Add **Shift** and only its due date moves.
 
 The initiative's [calendar](calendar.md) shows the same dated tasks by month, week or day, beside everybody's events.
 
@@ -260,7 +271,7 @@ Each of the project's four lists has a layout, and so does a task:
 
 Each list also offers **presets** in **Filters** — **Incomplete**, **Unassigned** and **Mine** to start with. Picking one sets your filters; it doesn't change anybody else's. It also goes in the page's address, so the link opens the list with it picked.
 
-Each list can be **shown in the layout menu** or not. A new project shows its board alone; at least one list always stays shown, and the project opens on one of those.
+Each list can be **shown in the layout menu** or not, in the editor or straight from **Project settings → Layouts**, where the views and the task pages are listed apart. A new project shows its board alone; at least one list always stays shown, and the project opens on one of those.
 
 The table, board and Gantt also say what you can group by, what they start grouped by, and which groups they leave out (finished sprints, for instance).
 

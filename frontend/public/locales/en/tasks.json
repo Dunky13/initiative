@@ -129,6 +129,10 @@
   "tagTasks": {
     "loadError": "Unable to load tasks."
   },
+  "ai": {
+    "fromComments_one": "Written without the task's comment, which did not fit.",
+    "fromComments_other": "Written from the {{read}} most recent of {{count}} comments."
+  },
   "checklist": {
     "title": "Checklist",
     "progressLabel": "Checklist progress",
