@@ -1,13 +1,17 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { renderPage } from "@/__tests__/helpers/render";
 
 import { VersionDialog } from "./VersionDialog";
 
+const changelog = vi.hoisted(() => ({
+  entries: [] as { version: string; date: string; changes: string }[],
+}));
+
 vi.mock("@/hooks/useSettings", () => ({
-  useChangelog: () => ({ data: { entries: [] }, isLoading: false }),
+  useChangelog: () => ({ data: changelog, isLoading: false }),
 }));
 
 const Footer = () => (
@@ -17,6 +21,10 @@ const Footer = () => (
 );
 
 describe("VersionDialog", () => {
+  afterEach(() => {
+    changelog.entries = [];
+  });
+
   it("leads, quietly, to the open-source licences", async () => {
     const user = userEvent.setup();
     const { router } = renderPage(Footer);
@@ -31,5 +39,26 @@ describe("VersionDialog", () => {
     await waitFor(() =>
       expect(screen.queryByRole("link", { name: "Open-source licences" })).not.toBeInTheDocument()
     );
+  });
+
+  it("opens the newest release and keeps older ones closed until asked", async () => {
+    changelog.entries = [
+      { version: "1.2.3", date: "2026-10-20", changes: "- **Gantt view for projects.**" },
+      { version: "1.2.2", date: "2026-10-01", changes: "- **Task types.**" },
+    ];
+    const user = userEvent.setup();
+    renderPage(Footer);
+
+    await user.click(await screen.findByRole("button", { name: "v1.2.3" }));
+    const newest = await screen.findByRole("button", { name: /Version 1\.2\.3/ });
+    const older = screen.getByRole("button", { name: /Version 1\.2\.2/ });
+    expect(newest).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Gantt view for projects.")).toBeInTheDocument();
+    expect(older).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Task types.")).not.toBeInTheDocument();
+
+    await user.click(older);
+    expect(older).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Task types.")).toBeInTheDocument();
   });
 });

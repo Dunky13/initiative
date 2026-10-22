@@ -48,6 +48,7 @@ history/
 - `cd backend && alembic upgrade head` — apply the latest database migrations (or run `python -m app.db.init_db` to migrate plus seed defaults).
 - `cd backend && alembic revision --autogenerate -m "desc"` — generate a migration after SQLModel changes.
 - `cd frontend && pnpm install && pnpm dev` — launch the Vite dev server (uses `VITE_API_URL`, defaults to `http://localhost:8000/api/v1`).
+- `.mcp.json` gives agents a `browser` MCP server: `@playwright/mcp`, pinned in `frontend` devDependencies to the release built on the same Playwright minor as `@playwright/test`, running headless on the Chromium `pnpm exec playwright install chromium` downloads (no Google Chrome needed). `frontend/src/__tests__/playwrightMcp.test.ts` fails when the two drift apart; bump them together.
 - `docker-compose up --build` — start Postgres 17 and the app image (API and SPA from one uvicorn).
 - `cd backend && pytest` / `ruff check app` and `cd frontend && pnpm lint` — run tests and linters. Tests are co-located alongside source files in `app/` (not in a separate `tests/` directory).
 
@@ -165,6 +166,32 @@ git log --oneline --grep="bump version" -n 1
 - ✅ Keep entries concise and user-focused
 - ❌ Do NOT add changelog entries for minor refactoring or internal changes
 - ❌ Do NOT put new changes under an already-released version number
+
+#### Screenshots
+
+A change people will want to see can carry a picture, shown under its bullet
+in the version dialog and on **What's new**, in light or dark to match the app.
+
+1. Add a shot in `frontend/e2e/shots/<name>.shot.ts`: walk to the screen, then
+   `await shoot(page, "<name>")` (or `shoot(page, "<name>", locator)` for one
+   part of it). `gantt.shot.ts` is the example; `barovia.ts` walks to the
+   seed's best-filled project.
+2. With the dev environment running on its seed data, run
+   `cd frontend && pnpm screenshots` (or `pnpm screenshots e2e/shots/<name>.shot.ts`).
+   It signs in as `admin1@example.com` and writes
+   `docs/images/releases/<name>.webp` and `<name>.dark.webp`.
+3. Look them over, then put the picture under its bullet, by its repository path
+   so GitHub draws it too:
+   `![What it shows](docs/images/releases/<name>.webp)`.
+   Several pictures on consecutive lines under one bullet become a strip that
+   scrolls sideways, each opening in the lightbox.
+
+The pictures live with the help center, so GitHub Pages publishes them when the
+release reaches `main` and the app loads them from there
+(`frontend/src/lib/releaseImages.ts`); no install or app update carries them.
+Name a picture for what it shows, not the release; a name already used would
+replace a released picture. `releaseImages.test.ts` fails when a picture the
+changelog names is missing either theme or its alt text.
 
 ### Docker Builds with Specific Versions
 
