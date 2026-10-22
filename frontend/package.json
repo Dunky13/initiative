@@ -149,7 +149,7 @@
     "yjs": "^13.6.32"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.13",
+    "@biomejs/biome": "2.5.15",
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.3",
     "@playwright/mcp": "0.0.80",
