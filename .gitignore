@@ -91,4 +91,6 @@ backend/.testmondata*
 frontend/playwright-report/
 # The session the release screenshots sign in with (frontend/e2e/shots)
 frontend/e2e/.auth/
+# Snapshots the browser MCP server (.mcp.json) writes where it runs
+.playwright-mcp/
 frontend/test-results/

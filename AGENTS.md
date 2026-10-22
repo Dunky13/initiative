@@ -48,6 +48,7 @@ history/
 - `cd backend && alembic upgrade head` — apply the latest database migrations (or run `python -m app.db.init_db` to migrate plus seed defaults).
 - `cd backend && alembic revision --autogenerate -m "desc"` — generate a migration after SQLModel changes.
 - `cd frontend && pnpm install && pnpm dev` — launch the Vite dev server (uses `VITE_API_URL`, defaults to `http://localhost:8000/api/v1`).
+- `.mcp.json` gives agents a `browser` MCP server: `@playwright/mcp`, pinned in `frontend` devDependencies to the release built on the same Playwright minor as `@playwright/test`, running headless on the Chromium `pnpm exec playwright install chromium` downloads (no Google Chrome needed). `frontend/src/__tests__/playwrightMcp.test.ts` fails when the two drift apart; bump them together.
 - `docker-compose up --build` — start Postgres 17 and the app image (API and SPA from one uvicorn).
 - `cd backend && pytest` / `ruff check app` and `cd frontend && pnpm lint` — run tests and linters. Tests are co-located alongside source files in `app/` (not in a separate `tests/` directory).
 

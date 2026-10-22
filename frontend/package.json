@@ -152,6 +152,7 @@
     "@biomejs/biome": "2.5.13",
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.3",
+    "@playwright/mcp": "0.0.80",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/typography": "^0.5.20",

@@ -160,8 +160,9 @@ The seed is TTRPG-themed (`scripts/seed/`): communities, initiatives, projects
 calendars, dashboards. Read the feature's code (its route under
 `frontend/src/routes/`, the component, its strings in
 `frontend/public/locales/en/`) to learn how a person reaches it, then walk it
-once in a real browser before writing the spec — the Playwright MCP browser if
-it is connected, otherwise a throwaway spec that logs
+once in a real browser before writing the spec — the project's `browser` MCP
+server (`.mcp.json`, headless Chromium) if it is connected, otherwise a
+throwaway spec that logs
 `await page.locator("body").ariaSnapshot()` at each step. Sign in as
 `admin1@example.com` / `changeme`, at 1280×800.
 
