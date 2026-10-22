@@ -13,6 +13,7 @@ from sqlalchemy import insert
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.models.platform.guild import CommunityRole
 from app.models.tenant.queue import Queue, QueueItem
 from app.testing.factories import (
     create_guild,
@@ -25,13 +26,16 @@ from app.testing import route_as, route_system
 
 
 async def _workspace(session: AsyncSession):
-    """A guild with a queue in it, plus a second member to act as."""
+    """A guild with a queue in it, plus a second admin to act as: somebody who
+    may write the queue, so the trigger is the only question."""
     creator = await create_user(session)
     guild = await create_guild(session, creator=creator)
     initiative = await create_initiative(session, guild=guild, creator=creator)
     queue = await create_queue(session, initiative=initiative, creator=creator)
     actor = await create_user(session)
-    await create_guild_membership(session, user=actor, guild=guild)
+    await create_guild_membership(
+        session, user=actor, guild=guild, role=CommunityRole.admin
+    )
     return guild, queue, actor
 
 
@@ -109,7 +113,9 @@ async def test_an_edit_by_someone_else_leaves_the_author(session: AsyncSession):
     """Authorship is a historical fact: the trigger is INSERT-only."""
     guild, queue, author = await _workspace(session)
     editor = await create_user(session)
-    await create_guild_membership(session, user=editor, guild=guild)
+    await create_guild_membership(
+        session, user=editor, guild=guild, role=CommunityRole.admin
+    )
 
     await _route(session, guild.id, author.id)
     item = QueueItem(queue_id=queue.id, label="first draft")

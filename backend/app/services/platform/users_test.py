@@ -196,8 +196,9 @@ async def test_deactivate_user(session: AsyncSession, monkeypatch):
     async with billing_manages_plans(session):
         await user_service.deactivate_user(session, user_id)
         await session.commit()
+        # Billing is told the count changed; it is counted when served.
         assert await change_rows(session, guild_id, kinds=("community.members",)) == [
-            ("community.members", {"members": 1, "guests": 0})
+            ("community.members", {})
         ]
 
     stmt = select(User).where(User.id == user_id)

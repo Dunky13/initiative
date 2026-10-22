@@ -502,7 +502,7 @@ async def test_a_read_grant_cannot_hand_over(
     needs."""
     owner = await acting_user(guild_role=CommunityRole.member, initiative=True)
     doc = await create_file(session, owner.initiative, owner.user)
-    grantee = await create_user(session)
+    grantee = await create_user(session, role=UserRole.support)
     await _approved_grant(
         session, user=grantee, guild=owner.guild, owner=owner.user, level="read"
     )

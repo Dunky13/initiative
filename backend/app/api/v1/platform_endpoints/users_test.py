@@ -733,9 +733,9 @@ async def test_delete_user_as_admin(client, session, acting_user, monkeypatch):
         assert response.status_code == 204
         session.expire_all()
         assert await session.get(GuildMembership, (guild_id, member_id)) is None
-        # Billing reads the community's new count from its change log.
+        # Billing is told the count changed; it is counted when served.
         assert await change_rows(session, guild_id, kinds=("community.members",)) == [
-            ("community.members", {"members": 1, "guests": 0})
+            ("community.members", {})
         ]
     assert signalled == [(member_id, "membership")]
     assert swept == [member_id]
