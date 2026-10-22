@@ -465,11 +465,15 @@ async def _keep(
     kind: str,
     definition: dict[str, Any],
     task_type_id: Optional[int] = None,
+    *,
+    rows: Optional[list[ToolLayout]] = None,
 ) -> None:
     """Store ``definition`` as the target's ``kind`` (for one type of item,
     when it is laid out per type), marking when it changed. The target's other
-    rows are not touched."""
-    rows = await _locked_rows(session, target)
+    rows are not touched. ``rows`` are the target's, read under its lock by a
+    caller that checked them first."""
+    if rows is None:
+        rows = await _locked_rows(session, target)
     row = next(
         (row for row in rows if row.kind == kind and row.task_type_id == task_type_id),
         None,
@@ -497,17 +501,16 @@ async def save(session: AsyncSession, target: Target, write: ToolLayoutWrite) ->
     definition = check(target, write)
     task_type_id = getattr(write, "task_type_id", None)
     await _require_type(session, target, task_type_id)
-    _require_one_shown(
-        target, await _locked_rows(session, target), write.kind, definition
-    )
-    await _keep(session, target, write.kind, definition, task_type_id)
+    rows = await _locked_rows(session, target)
+    _require_one_shown(target, rows, write.kind, definition)
+    await _keep(session, target, write.kind, definition, task_type_id, rows=rows)
 
 
 async def save_default(session: AsyncSession, target: Target, kind: str) -> None:
     """Open the target on its ``kind`` list, one it shows."""
     rows = await _locked_rows(session, target)
     _require(kind, shown_lists(target.tool, _stored_lists(rows)))
-    await _keep(session, target, LAYOUT_DEFAULT, {"kind": kind})
+    await _keep(session, target, LAYOUT_DEFAULT, {"kind": kind}, rows=rows)
 
 
 async def reset(
