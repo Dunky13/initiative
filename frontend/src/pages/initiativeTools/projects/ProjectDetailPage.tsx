@@ -1,5 +1,5 @@
 import { useParams, useRouter, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
@@ -74,18 +74,6 @@ export const ProjectDetailPage = () => {
   // authority once it arrives — a URL naming a different one is corrected
   // rather than left to build links into an initiative it isn't in.
   const initiativeId = useCanonicalInitiativeId(project?.initiative_id);
-  const projectName = project?.name;
-  useEffect(() => {
-    if (typeof document === "undefined" || !projectName) {
-      return;
-    }
-    const previousTitle = document.title || "Initiative";
-    document.title = `${projectName} - Initiative`;
-    return () => {
-      document.title = previousTitle;
-    };
-  }, [projectName]);
-
   // Stable identity: the task table's column definitions and its memoized
   // cells both key off this. Declared with the other hooks, above the early
   // returns below.
