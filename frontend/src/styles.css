@@ -583,21 +583,6 @@ html.pride [data-slot="button"].bg-primary:hover {
   margin-bottom: calc(4.5rem + var(--safe-area-inset-bottom, 0px)) !important;
 }
 
-/* A dialog blurs the app behind it. The blur is a filter on the app itself
-   rather than a backdrop-filter on the overlay: the overlay holds the dialog,
-   so a backdrop blur is redrawn on every frame the dialog scrolls, while the
-   app behind stays still and its blurred picture is kept. Dialogs, their
-   popovers and the mascot toasts render outside #root, so they stay sharp. */
-body:has([data-slot="dialog-overlay"][data-state="open"]) #root {
-  filter: blur(8px);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  #root {
-    transition: filter 200ms;
-  }
-}
-
 /* react-grid-layout draws its resize corner in a fixed `rgba(0, 0, 0, 0.4)`,
    which is invisible on a dark card, and hides it entirely until the tile is
    hovered. Same handle, same behaviour — drawn in a theme colour and faintly

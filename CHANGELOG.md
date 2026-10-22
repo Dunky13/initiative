@@ -59,7 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **"Starts grouped by" reaches everyone.** A project list opens grouped the way its layout says for anyone who hasn't picked a grouping of their own.
 - **Calendar subscriptions.** A subscribed calendar is named after the calendar and its initiative, in your own time zone. To rename one you already subscribed to, subscribe to its link again.
 - **Updating the app.** The phone and desktop apps show one prompt for a new version, and **Reload** always installs it.
-- **Dialogs scroll smoothly.** A long dialog, such as the release notes, keeps up as you scroll over the blurred page behind it.
 - **Home on a phone.** Customizing keeps the view tabs and widget buttons clear of each other and of widget titles, long names wrap, and the calendar widget is no longer a card inside a card.
 - **Spacing on a layout you changed.** Board cards and pages you changed in **Edit layouts** keep their spacing.
 
