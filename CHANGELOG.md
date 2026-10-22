@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Calendar subscriptions.** A subscribed calendar is named after the calendar and its initiative, in your own time zone. To rename one you already subscribed to, subscribe to its link again.
 - **Updating the app.** The phone and desktop apps show one prompt for a new version, and **Reload** always installs it.
 - **Home on a phone.** Customizing keeps the view tabs and widget buttons clear of each other and of widget titles, long names wrap, and the calendar widget is no longer a card inside a card.
+- **A long title shows whole on a phone.** The title of a task, event, counter or picture wraps onto more lines instead of being cut off at the edge of the screen, with its buttons on a row above it.
 - **Spacing on a layout you changed.** Board cards and pages you changed in **Edit layouts** keep their spacing.
 
 ## [0.76.0] - 2026-10-20
