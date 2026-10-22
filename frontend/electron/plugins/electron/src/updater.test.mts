@@ -16,12 +16,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const paths = vi.hoisted(() => ({
   userData: "",
   windows: [] as unknown[],
-  fetch: (async () => new Response()) as (url: string) => Promise<Response>,
+  fetch: (async () => new Response()) as (url: string, init?: RequestInit) => Promise<Response>,
 }));
 vi.mock("./app.mjs", () => ({
   app: { getPath: () => paths.userData, getVersion: () => "1.0.0" },
   BrowserWindow: { getAllWindows: () => paths.windows },
-  net: { fetch: (url: string) => paths.fetch(url) },
+  net: { fetch: (url: string, init?: RequestInit) => paths.fetch(url, init) },
 }));
 
 import { CapacitorUpdater } from "./updater.mjs";
@@ -93,6 +93,16 @@ describe("the desktop bundle updater", () => {
     expect(existsSync(join(paths.userData, "updates", kept.id, "assets", "app.js"))).toBe(true);
     const { bundles: listed } = await updater.list();
     expect(listed.map((b) => `${b.version}:${b.status}`)).toEqual(["2.0.0:pending", "2.0.1:error"]);
+  });
+
+  it("downloads past the cache, since every version is served at one URL", async () => {
+    const updater = new CapacitorUpdater({ services: { bundles: platform() } });
+    const bytes = zip({ "index.html": "" });
+    serve(bytes);
+
+    await updater.download({ url: "u", version: "2.0.0", checksum: sha(bytes) });
+
+    expect(paths.fetch).toHaveBeenCalledWith("u", { cache: "no-store" });
   });
 
   it("refuses a bundle with an entry outside its folder", async () => {

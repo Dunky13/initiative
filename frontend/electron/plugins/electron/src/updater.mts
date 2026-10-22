@@ -112,7 +112,8 @@ export class CapacitorUpdater {
     this.write(state);
     try {
       // Chromium's network stack, not Node's, fetches and decodes the bundle.
-      const response = await net.fetch(url);
+      // Every version is served at one URL, cached as immutable, so skip the cache.
+      const response = await net.fetch(url, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`The bundle download answered ${response.status}.`);
       }
