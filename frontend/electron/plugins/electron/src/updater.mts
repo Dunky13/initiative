@@ -4,7 +4,7 @@ import { dirname, join, normalize, sep } from "node:path";
 
 import { unzipSync } from "fflate";
 
-import { app, type BrowserWindow } from "./app.mjs";
+import { app, type BrowserWindow, net } from "./app.mjs";
 import { mainWindow } from "./desktop.mjs";
 
 type BundleStatus = "success" | "error" | "pending" | "downloading";
@@ -111,7 +111,8 @@ export class CapacitorUpdater {
     });
     this.write(state);
     try {
-      const response = await fetch(url);
+      // Chromium's network stack, not Node's, fetches and decodes the bundle.
+      const response = await net.fetch(url);
       if (!response.ok) {
         throw new Error(`The bundle download answered ${response.status}.`);
       }

@@ -13,10 +13,15 @@ import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const paths = vi.hoisted(() => ({ userData: "", windows: [] as unknown[] }));
+const paths = vi.hoisted(() => ({
+  userData: "",
+  windows: [] as unknown[],
+  fetch: (async () => new Response()) as (url: string) => Promise<Response>,
+}));
 vi.mock("./app.mjs", () => ({
   app: { getPath: () => paths.userData, getVersion: () => "1.0.0" },
   BrowserWindow: { getAllWindows: () => paths.windows },
+  net: { fetch: (url: string) => paths.fetch(url) },
 }));
 
 import { CapacitorUpdater } from "./updater.mjs";
@@ -58,11 +63,9 @@ const downloaded = async () => {
 const statuses = async (updater: CapacitorUpdater) =>
   (await updater.list()).bundles.map((b) => b.status);
 
-const serve = (bytes: Uint8Array) =>
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => new Response(bytes))
-  );
+const serve = (bytes: Uint8Array) => {
+  paths.fetch = vi.fn(async () => new Response(bytes));
+};
 
 beforeEach(() => {
   paths.userData = mkdtempSync(join(tmpdir(), "initiative-updater-"));

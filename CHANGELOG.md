@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A long title shows whole on a phone.** The title of a task, event, counter or picture wraps onto more lines instead of being cut off at the edge of the screen, with its buttons on a row above it.
 - **Spacing on a layout you changed.** Board cards and pages you changed in **Edit layouts** keep their spacing.
 
+### Security
+
+- **Node.js October 2026 security releases.** The desktop app downloads app updates through its built-in browser instead of Node.js, and the image is built on Node.js 24.22.1.
+
 ## [0.76.0] - 2026-10-20
 
 ### Added
