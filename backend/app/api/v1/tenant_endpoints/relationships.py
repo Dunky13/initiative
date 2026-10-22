@@ -28,6 +28,7 @@ behalf answers to them too:
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import union
 from sqlmodel import select
 
 from app.api.deps import (
@@ -46,7 +47,8 @@ from app.core.search import SearchEntityType
 from app.db import reference_targets
 from app.models.platform.user import User
 from app.models.tenant.relationship import EntityRelationship
-from app.models.tenant.task import Task
+from app.models.tenant.project import Project
+from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
 from app.schemas.tenant.relationship import (
     EndpointRef,
     NeighbourhoodEdge,
@@ -55,7 +57,9 @@ from app.schemas.tenant.relationship import (
     RelatedEnd,
     RelationshipCreate,
     RelationshipRead,
+    LinkedTaskRead,
     TaskEdgeRead,
+    TaskEdgesRead,
 )
 from app.services.tenant import relationships as relationships_service
 from app.services.tenant.relationships import Endpoint
@@ -216,35 +220,86 @@ async def list_relationships(
     ]
 
 
-@router.get("/tasks", response_model=List[TaskEdgeRead])
+@router.get("/tasks", response_model=TaskEdgesRead)
 async def list_task_edges(
     session: RLSSessionDep,
     guild_context: GuildContextDep,
     project_id: int = Query(description="The project whose tasks' edges to list"),
-) -> List[TaskEdgeRead]:
-    """Every live edge between two of a project's tasks the reader can open,
-    in one read: what a Gantt draws its arrows and nesting from."""
-    task_ids = (
-        await session.exec(select(Task.id).where(Task.project_id == project_id))
-    ).all()
+) -> TaskEdgesRead:
+    """Every live edge from or to a task of a project, to another task the
+    reader can open, and those of the tasks it reaches that are another
+    project's: what a Gantt draws its arrows, nesting and outside rows from."""
+    task_ids = set(
+        (await session.exec(select(Task.id).where(Task.project_id == project_id))).all()
+    )
     nodes = [node_id(SearchEntityType.task, task_id) for task_id in task_ids]
     if not nodes:
-        return []
-    rows = await session.exec(
-        select(
+        return TaskEdgesRead(edges=[], others=[])
+
+    def arm(anchor):
+        return select(
+            EntityRelationship.id,
             EntityRelationship.source_id,
             EntityRelationship.target_id,
             EntityRelationship.relationship_type,
         ).where(
-            EntityRelationship.source_node.in_(nodes),  # type: ignore[union-attr]
-            EntityRelationship.target_node.in_(nodes),  # type: ignore[union-attr]
+            anchor.in_(nodes),
+            EntityRelationship.source_type == SearchEntityType.task.value,
+            EntityRelationship.target_type == SearchEntityType.task.value,
             EntityRelationship.removed_at.is_(None),  # type: ignore[union-attr]
         )
+
+    rows = (
+        await session.exec(
+            union(
+                arm(EntityRelationship.source_node),
+                arm(EntityRelationship.target_node),
+            )
+        )
+    ).all()
+    outside = {end for _, *ends, _ in rows for end in ends if end not in task_ids}
+    others = (
+        (
+            await session.exec(
+                select(
+                    Task.id,
+                    Task.title,
+                    Task.start_date,
+                    Task.due_date,
+                    Task.project_id,
+                    Project.name,
+                    Project.initiative_id,
+                    TaskStatus.category,
+                )
+                .join(Project, Project.id == Task.project_id)
+                .join(TaskStatus, TaskStatus.id == Task.task_status_id)
+                .where(Task.id.in_(outside))  # type: ignore[union-attr]
+            )
+        ).all()
+        if outside
+        else []
     )
-    return [
-        TaskEdgeRead(source_id=source, target_id=target, relationship_type=kind)
-        for source, target, kind in rows.all()
-    ]
+    return TaskEdgesRead(
+        edges=[
+            TaskEdgeRead(
+                id=id, source_id=source, target_id=target, relationship_type=kind
+            )
+            for id, source, target, kind in rows
+        ],
+        others=[
+            LinkedTaskRead(
+                id=task,
+                title=title,
+                start_date=start,
+                due_date=due,
+                project_id=project,
+                project_name=name,
+                initiative_id=initiative,
+                done=category == TaskStatusCategory.done,
+            )
+            for task, title, start, due, project, name, initiative, category in others
+        ],
+    )
 
 
 @router.get("/neighbourhood", response_model=NeighbourhoodRead)

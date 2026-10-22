@@ -106,20 +106,18 @@ export const useRelate = (
     options
   );
 
+/** An edge to take back: the row, so the far end's tool is refreshed too, or
+ *  its id alone where the far end is in the anchor's own tool. */
+type UnrelatedEdge = Pick<RelationshipRead, "id"> & Partial<Pick<RelationshipRead, "other">>;
+
 /**
  * Take one edge back.
- *
- * Given the whole row rather than its id, so the far end's tool can be
- * invalidated too — the row is already on screen wherever this is called.
  */
-export const useUnrelate = (
-  anchor?: ToolRef | null,
-  options?: MutationOpts<void, RelationshipRead>
-) =>
-  useCommunityMutation<void, RelationshipRead>(
+export const useUnrelate = (anchor?: ToolRef | null, options?: MutationOpts<void, UnrelatedEdge>) =>
+  useCommunityMutation<void, UnrelatedEdge>(
     {
       mutationFn: (communityId, row) => removeRelationship(communityId, row.id),
-      invalidate: (_data, row) => invalidateEdge(anchor, toolRefOf(row.other)),
+      invalidate: (_data, row) => invalidateEdge(anchor, row.other ? toolRefOf(row.other) : null),
       errorKey: "relations:removeError",
     },
     options

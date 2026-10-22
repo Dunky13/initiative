@@ -1143,13 +1143,17 @@ async def test_a_neighbourhood_of_something_out_of_reach_is_absent(
 async def test_a_projects_task_edges_are_read_at_once(
     client: AsyncClient, acting_user, session
 ):
-    """The edges between the project's own tasks, and none reaching out of it."""
+    """The edges from or to the project's tasks, with the other projects'
+    tasks they reach; none to a task the reader cannot open."""
     a = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     first, second, part = [await create_task(session, a.project) for _ in range(3)]
-    elsewhere = await create_task(
-        session, await create_project(session, a.initiative, a.user)
+    other_project = await create_project(session, a.initiative, a.user, name="Other")
+    elsewhere = await create_task(session, other_project, title="Elsewhere")
+    closed = await create_initiative(session, a.guild, a.user, name="Closed")
+    unseen = await create_task(
+        session, await create_project(session, closed, a.user, name="Unseen")
     )
     doc = await create_file(session, a.initiative, a.user)
     await _seed(
@@ -1158,16 +1162,34 @@ async def test_a_projects_task_edges_are_read_at_once(
         (("task", first.id), "depends_on", ("task", second.id)),
         (("task", part.id), "part_of", ("task", first.id)),
         (("task", first.id), "depends_on", ("task", elsewhere.id)),
+        (("task", second.id), "depends_on", ("task", unseen.id)),
         (("task", second.id), "attached", ("file", doc.id)),
+    )
+    b = await acting_user(
+        guild_role=CommunityRole.member,
+        guild=a.guild,
+        initiative=a.initiative,
+        initiative_role="member",
     )
 
     response = await client.get(
-        a.g("/relationships/tasks"),
-        headers=a.headers,
+        b.g("/relationships/tasks"),
+        headers=b.headers,
         params={"project_id": a.project.id},
     )
     assert response.status_code == 200, response.text
+    body = response.json()
     assert sorted(
         (edge["source_id"], edge["relationship_type"], edge["target_id"])
-        for edge in response.json()
-    ) == sorted([(first.id, "depends_on", second.id), (part.id, "part_of", first.id)])
+        for edge in body["edges"]
+    ) == sorted(
+        [
+            (first.id, "depends_on", second.id),
+            (part.id, "part_of", first.id),
+            (first.id, "depends_on", elsewhere.id),
+        ]
+    )
+    assert all(isinstance(edge["id"], int) for edge in body["edges"])
+    assert [
+        (task["id"], task["project_name"], task["done"]) for task in body["others"]
+    ] == [(elsewhere.id, "Other", False)]

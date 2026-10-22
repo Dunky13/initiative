@@ -125,14 +125,40 @@ class RelationshipRead(SanitizedBaseModel):
 
 
 class TaskEdgeRead(SanitizedBaseModel):
-    """One edge between two tasks of a project, as it is stored: the source
+    """One edge from or to a task of a project, as it is stored: the source
     depends on, is part of, or is related to the target."""
 
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
+    id: int
     source_id: int
     target_id: int
     relationship_type: RelationshipType
+
+
+class LinkedTaskRead(SanitizedBaseModel):
+    """A task of another project at the far end of one of those edges, as a
+    Gantt draws it beside the project's own."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    id: int
+    title: str
+    start_date: Optional[datetime] = None
+    due_date: Optional[datetime] = None
+    project_id: int
+    project_name: str
+    initiative_id: int
+    done: bool
+
+
+class TaskEdgesRead(SanitizedBaseModel):
+    """A project's task edges, and the other projects' tasks they reach."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    edges: List[TaskEdgeRead]
+    others: List[LinkedTaskRead]
 
 
 class NeighbourhoodNode(SanitizedBaseModel):
