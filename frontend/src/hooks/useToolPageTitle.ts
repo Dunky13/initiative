@@ -8,6 +8,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
 import { toolDetailQuery } from "@/hooks/toolHooks";
@@ -15,6 +16,7 @@ import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { toolInPath } from "@/lib/tools";
 
 export const useToolPageTitle = () => {
+  const { t } = useTranslation("common");
   const communityId = useActiveCommunityId();
   const { pathname } = useLocation();
   const found = toolInPath(pathname);
@@ -28,14 +30,14 @@ export const useToolPageTitle = () => {
     // keeps the previous data, and this hook outlives every tool page.
     placeholderData: undefined,
   }).data?.name;
-  const title = found && name ? name : null;
+  const title = found && name ? t("pageTitle", { name }) : null;
 
   useEffect(() => {
     if (!title) {
       return;
     }
     const previousTitle = document.title || "Initiative";
-    document.title = `${title} - Initiative`;
+    document.title = title;
     return () => {
       document.title = previousTitle;
     };
