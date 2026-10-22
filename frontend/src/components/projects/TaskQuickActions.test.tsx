@@ -13,6 +13,7 @@ import {
   buildTask,
   buildTaskAssignee,
   buildTaskListResponse,
+  buildToolLayoutSet,
   buildUser,
 } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
@@ -47,8 +48,20 @@ const seed = (task: Partial<TaskListRead>) => {
   );
 };
 
-const project = ({ layout, canEdit = true }: { layout: "table" | "board"; canEdit?: boolean }) =>
-  renderPage(
+const project = ({ layout, canEdit = true }: { layout: "table" | "board"; canEdit?: boolean }) => {
+  // A project shows its board alone until its table is shown too.
+  server.use(
+    communityHttp.get("/layouts/", () =>
+      HttpResponse.json(
+        buildToolLayoutSet({
+          layouts: [
+            { kind: "table", is_default: false, hidden: false, definition: {}, updated_at: null },
+          ],
+        })
+      )
+    )
+  );
+  return renderPage(
     () => (
       <ProjectTasksSection
         projectId={1}
@@ -59,8 +72,9 @@ const project = ({ layout, canEdit = true }: { layout: "table" | "board"; canEdi
         taskHref={(taskId) => `/tasks/${taskId}`}
       />
     ),
-    { routerSearch: layout === "board" ? { layout: "board" } : {}, auth: { user: ME } }
+    { routerSearch: { layout }, auth: { user: ME } }
   );
+};
 
 const row = async (title: string) => {
   const cell = (await screen.findByText(title)).closest("tr");
