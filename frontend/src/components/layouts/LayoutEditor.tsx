@@ -13,7 +13,7 @@ import type {
   ListLayoutReadKind,
   ToolLayoutSetRead,
 } from "@/api/generated/initiativeAPI.schemas";
-import { listLayoutLooks, PROJECT_HIDDEN_LISTS } from "@/components/projects/projectTasksConfig";
+import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -312,9 +312,9 @@ export const LayoutEditor = ({
   const selection = stillThere(selected, tree, columns) ? selected : LAYOUT_SELECTED;
 
   // Which lists the target's menu offers, as the draft has them: each its own
-  // layout, or else its tool, does not hide. A project shows one at least.
+  // layout does not hide. A project shows one at least.
   const hiddenOf = (kind: ListLayoutReadKind, lists: Draft["lists"] = draft.lists) =>
-    lists[kind]?.hidden ?? (project ? PROJECT_HIDDEN_LISTS.includes(kind) : false);
+    lists[kind]?.hidden ?? false;
   const shownKinds = kinds.filter((kind) => !hiddenOf(kind));
   /** `lists`, with the list it opens on moved to the first shown where the one
    *  it was on is not. */

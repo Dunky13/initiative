@@ -124,7 +124,7 @@ async def test_a_project_draws_its_layouts_as_shipped_until_one_changes(
     assert response.status_code == 200
     body = response.json()
     assert body["can_configure"] is True
-    # The board alone shows, and it opens on it; a task page for each type of
+    # Every list shows, and it opens on the first; a task page for each type of
     # task, in the types' order.
     assert [
         (
@@ -136,10 +136,10 @@ async def test_a_project_draws_its_layouts_as_shipped_until_one_changes(
         )
         for layout in body["layouts"]
     ] == [
-        ("table", False, True, None, None),
-        ("board", True, False, None, None),
-        ("gantt", False, True, None, None),
-        ("calendar", False, True, None, None),
+        ("table", True, False, None, None),
+        ("board", False, False, None, None),
+        ("gantt", False, False, None, None),
+        ("calendar", False, False, None, None),
         *(("task", None, None, task_type.id, None) for task_type in types),
     ]
 
@@ -164,7 +164,11 @@ async def test_a_project_shows_the_lists_it_chooses_and_always_one(
             f"{url}{path}", params=params, json=payload, headers=a.headers
         )
 
-    # A hidden list is not one to open on, until it is shown.
+    # A hidden list is not one to open on, until it is shown again.
+    for kind in ("table", "gantt"):
+        await put("", {"kind": kind, "definition": {"hidden": True}})
+    calendar = await put("", {"kind": "calendar", "definition": {"hidden": True}})
+    assert shown(calendar.json()) == [("board", True)]
     refused = await put("default", {"kind": "calendar"})
     assert refused.status_code == 400
     assert refused.json()["detail"] == "TOOL_LAYOUTS_KIND_NOT_ALLOWED"
@@ -174,17 +178,15 @@ async def test_a_project_shows_the_lists_it_chooses_and_always_one(
     assert shown(opens.json()) == [("board", False), ("calendar", True)]
 
     # Hiding the one it opens on opens it on the first still shown; hiding the
-    # last is refused, and so is putting it back as shipped when that hides it.
+    # last is refused, and putting one back as shipped shows it again, first.
     hidden = await put("", {"kind": "calendar", "definition": {"hidden": True}})
     assert shown(hidden.json()) == [("board", True)]
     last = await put("", {"kind": "board", "definition": {"hidden": True}})
     assert last.status_code == 400
     assert last.json()["detail"] == "TOOL_LAYOUTS_ONE_LIST_SHOWN"
-    await put("", {"kind": "table", "definition": {"hidden": False}})
-    await put("", {"kind": "board", "definition": {"hidden": True}})
     reset = await client.delete(f"{url}table", params=params, headers=a.headers)
-    assert reset.status_code == 400
-    assert reset.json()["detail"] == "TOOL_LAYOUTS_ONE_LIST_SHOWN"
+    assert reset.status_code == 200, reset.text
+    assert shown(reset.json()) == [("table", True), ("board", False)]
 
 
 async def test_a_layout_changes_alone_and_goes_back_to_shipped(

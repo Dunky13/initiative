@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   ![A project's Gantt grouped by assignee, each person's tasks under their name and unassigned work at the end](docs/images/releases/group-by-assignees.webp)
 
-- **Choose a project's views.** Show or hide Table, Board, Gantt and Calendar in **Edit layouts**. New projects start with the board alone; existing projects keep the views they had.
+- **Choose a project's views.** Show or hide Table, Board, Gantt and Calendar in **Edit layouts**. Every project shows all four until you hide some.
 - **Several My tasks widgets on Home.** Each keeps its own filters and columns, so one can show this week's work and another everything high priority.
 - **Task exports match your table.** PDF, spreadsheet and Markdown exports use the table's columns, properties included, and its grouping (#2911). A project's report from its settings does the same.
 - **Hourly repeats after completion.** Repeat a task a set number of hours after it is finished, with an optional daily maximum.

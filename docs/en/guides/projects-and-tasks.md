@@ -271,7 +271,7 @@ Each of the project's four lists has a layout, and so does a task:
 
 Each list also offers **presets** in **Filters** — **Incomplete**, **Unassigned** and **Mine** to start with. Picking one sets your filters; it doesn't change anybody else's. It also goes in the page's address, so the link opens the list with it picked.
 
-Each list can be **shown in the layout menu** or not, in the editor or straight from **Project settings → Layouts**, where the views and the task pages are listed apart. A new project shows its board alone; at least one list always stays shown, and the project opens on one of those.
+Each list can be **shown in the layout menu** or not, in the editor or straight from **Project settings → Layouts**, where the views and the task pages are listed apart. A new project shows all four; at least one list always stays shown, and the project opens on one of those.
 
 The table, board and Gantt also say what you can group by, what they start grouped by, and which groups they leave out (finished sprints, for instance).
 

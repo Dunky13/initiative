@@ -49,18 +49,7 @@ const seed = (task: Partial<TaskListRead>) => {
 };
 
 const project = ({ layout, canEdit = true }: { layout: "table" | "board"; canEdit?: boolean }) => {
-  // A project shows its board alone until its table is shown too.
-  server.use(
-    communityHttp.get("/layouts/", () =>
-      HttpResponse.json(
-        buildToolLayoutSet({
-          layouts: [
-            { kind: "table", is_default: false, hidden: false, definition: {}, updated_at: null },
-          ],
-        })
-      )
-    )
-  );
+  server.use(communityHttp.get("/layouts/", () => HttpResponse.json(buildToolLayoutSet())));
   return renderPage(
     () => (
       <ProjectTasksSection

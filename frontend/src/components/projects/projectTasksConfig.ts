@@ -49,10 +49,6 @@ export const listLayoutLooks: Record<ListLayoutReadKind, Look> = {
   calendar: { icon: Calendar, labelKey: "tasks.viewCalendar" },
 };
 
-/** The lists a project leaves out of its menu as shipped: it shows its board
- *  alone. As `app.core.tools.HIDDEN_LISTS` says. */
-export const PROJECT_HIDDEN_LISTS: readonly ListLayoutReadKind[] = ["table", "gantt", "calendar"];
-
 /** Each detail layout's icon, and its name in `layouts`. */
 export const detailLayoutLooks: Record<DetailLayoutRead["kind"], Look> = {
   task: { icon: FileText, labelKey: "layouts:taskLayout" },

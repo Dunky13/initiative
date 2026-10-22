@@ -277,7 +277,7 @@ describe("LayoutEditor", () => {
   });
 
   it("shows a list, and opens the project on it, as changes of their own", async () => {
-    const { user } = editor("gantt");
+    const { user } = editor("gantt", vi.fn(), buildToolLayoutSet({ hidden: ["gantt"] }));
     await outline();
 
     // A hidden list is not one to open on, and the last one shown stays shown.
@@ -295,7 +295,7 @@ describe("LayoutEditor", () => {
   });
 
   it("keeps the last list a project shows", async () => {
-    editor("board");
+    editor("board", vi.fn(), buildToolLayoutSet({ hidden: ["table", "gantt", "calendar"] }));
     await outline();
 
     expect(screen.getByRole("switch", { name: /shown in the layout menu/i })).toBeDisabled();

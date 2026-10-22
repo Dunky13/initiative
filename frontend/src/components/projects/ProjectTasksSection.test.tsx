@@ -76,23 +76,11 @@ const withTags = (ids: number[]) => {
   );
 };
 
-/** A project made before a new one showed its board alone, as the upgrade
- *  left it: its table, board and Gantt shown, opening on its table. */
-const EXISTING_LISTS = (["table", "board", "gantt"] as const).map((kind) => ({
-  kind,
-  is_default: kind === "table",
-  hidden: false,
-  definition: {},
-  updated_at: null,
-}));
-const existingProject = (overrides: Parameters<typeof buildToolLayoutSet>[0] = {}) =>
-  buildToolLayoutSet({ ...overrides, layouts: [...(overrides.layouts ?? []), ...EXISTING_LISTS] });
-
-/** Such a project's layouts, but for `overrides`. */
+/** A project's layouts, but for `overrides`. */
 const withLayouts = (overrides: Parameters<typeof buildToolLayoutSet>[0]) => {
   server.use(
     communityHttp.get("/layouts/", () =>
-      HttpResponse.json<ToolLayoutSetRead>(existingProject(overrides))
+      HttpResponse.json<ToolLayoutSetRead>(buildToolLayoutSet(overrides))
     )
   );
 };
@@ -202,6 +190,7 @@ describe("ProjectTasksSection layouts", () => {
       "Table",
       "Board",
       "Gantt",
+      "Calendar",
     ]);
   });
 
@@ -281,7 +270,7 @@ describe("ProjectTasksSection layouts", () => {
     let taskRequests = 0;
     server.use(
       communityHttp.get("/layouts/", () =>
-        fail ? new HttpResponse(null, { status: 500 }) : HttpResponse.json(existingProject())
+        fail ? new HttpResponse(null, { status: 500 }) : HttpResponse.json(buildToolLayoutSet())
       ),
       communityHttp.get("/tasks/", () => {
         taskRequests += 1;
