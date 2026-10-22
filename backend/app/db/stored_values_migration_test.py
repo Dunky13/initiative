@@ -68,6 +68,16 @@ async def _stored(session, schema: str, job_id: int) -> dict:
     }
 
 
+def _guild_source(migration: ModuleType, bind, source: dict[str, str]) -> None:
+    """The guild half of 0445 on the table that is still there. The members' AI
+    key and preference tables it also respelled went in 20261021_0533."""
+    migration._unforced(
+        bind,
+        ("export_jobs",),
+        lambda: migration._set_value(bind, "export_jobs", "source", source),
+    )
+
+
 async def test_stored_values_say_community_and_back(session) -> None:
     user = await create_user(session)
     guild = await create_guild(session, creator=user)
@@ -115,7 +125,7 @@ async def test_stored_values_say_community_and_back(session) -> None:
             text("SELECT set_config('search_path', :sp, true)"),
             {"sp": f"{schema}, public"},
         )
-        migration._guild(bind, {"guild": "community"}, {"guild": "community"})
+        _guild_source(migration, bind, {"guild": "community"})
 
     await session.run_sync(upgrade)
     await session.commit()
@@ -138,7 +148,7 @@ async def test_stored_values_say_community_and_back(session) -> None:
             text("SELECT set_config('search_path', :sp, true)"),
             {"sp": f"{schema}, public"},
         )
-        migration._guild(bind, {"community": "guild"}, {"community": "guild"})
+        _guild_source(migration, bind, {"community": "guild"})
         migration._public(
             bind,
             {new: o for o, new in migration.NOTIFICATION_TYPES.items()},

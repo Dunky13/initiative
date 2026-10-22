@@ -805,14 +805,14 @@ async def test_signing_in_starts_the_address_count_over(
     ).status_code == 200
 
 
-@pytest.mark.parametrize("recovery", ["reset", "moderator"])
+@pytest.mark.parametrize("recovery", ["reset", "support"])
 async def test_lifting_a_lock_starts_the_address_count_over(
     client: AsyncClient,
     session: AsyncSession,
     two_per_address,
     recovery: str,
 ) -> None:
-    """The refusal tells them to reset their password, and a moderator's unlock
+    """The refusal tells them to reset their password, and support's unlock
     says the account is open again, so either has to let them in, whichever of
     the two counts was refusing them."""
     from app.models.platform.user import UserRole
@@ -848,10 +848,10 @@ async def test_lifting_a_lock_starts_the_address_count_over(
         )
     else:
         password = "right-password"
-        moderator = await create_user(session, role=UserRole.moderator)
+        support = await create_user(session, role=UserRole.support)
         lifted = await client.delete(
             f"/api/v1/operator/users/{user_id}/sign-in-lock",
-            headers=get_auth_headers(moderator),
+            headers=get_auth_headers(support),
         )
     assert lifted.status_code == 200, lifted.text
     signed_in = await _sign_in(client, "reset@example.com", password)
