@@ -732,6 +732,7 @@
   "DASHBOARD_VIEW_MODE_NOT_ALLOWED": "Tu rol no puede ejecutar paneles como Iniciativa. Pídelo a quien gestiona la iniciativa.",
   "DASHBOARD_VIEW_MODE_EDIT_NOT_ALLOWED": "Este panel se ejecuta como su iniciativa, así que cambiar sus widgets requiere permiso para ejecutar paneles como Iniciativa. Cambia «Ejecutar el panel como» a Individual para editar.",
   "ACCESS_GRANT_MODERATE_NOT_HELD": "El acceso de moderación es para quienes moderan contenido y nunca se concede a uno mismo.",
+  "ACCESS_GRANT_ONLY_MODERATE": "Los moderadores solo pueden solicitar acceso de moderación.",
   "HOLD_TARGET_NOT_FOUND": "Aquí no hay nada que retener.",
   "HOLD_NOT_ALLOWED": "Solo la moderación de esta comunidad puede retener contenido para la plataforma.",
   "HOLD_ALREADY_HELD": "Esto ya está retenido para la plataforma.",

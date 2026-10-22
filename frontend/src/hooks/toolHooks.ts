@@ -275,6 +275,22 @@ const listHook = <TList, TParams>(endpoints: {
 };
 
 /**
+ * One row, as query options: for a caller that holds the tool as a value
+ * rather than calling that tool's own hook — the page title reads whichever
+ * tool the route is in. The same key and fetch `useDetail` uses, so the two
+ * share one cache entry.
+ */
+const detailQueryOf =
+  <TRead>(endpoints: {
+    detailKey: (communityId: number, id: number) => CacheKey;
+    detail: (communityId: number, id: number) => Promise<TRead>;
+  }) =>
+  (communityId: number, id: number) => ({
+    queryKey: endpoints.detailKey(communityId, id),
+    queryFn: () => endpoints.detail(communityId, id),
+  });
+
+/**
  * One row. `null` for an id the route has not resolved yet, which holds the
  * request rather than firing it at nothing; a caller's own `enabled` narrows
  * further and never widens.
@@ -287,12 +303,12 @@ const detailHook = <TRead>(endpoints: {
   detailKey: (communityId: number, id: number) => CacheKey;
   detail: (communityId: number, id: number) => Promise<TRead>;
 }) => {
+  const detailQuery = detailQueryOf(endpoints);
   return (id: number | null, options?: QueryOpts<TRead>) => {
     const communityId = useActiveCommunityId();
     const { enabled: userEnabled = true, ...rest } = options ?? {};
     return useQuery<TRead>({
-      queryKey: endpoints.detailKey(communityId, id!),
-      queryFn: () => endpoints.detail(communityId, id!),
+      ...detailQuery(communityId, id!),
       enabled: id !== null && Number.isFinite(id) && userEnabled,
       placeholderData: undefined,
       ...rest,
@@ -432,6 +448,7 @@ const makeToolHooks = <TRead, TList, TMyList, TCreate, TUpdate, TParams>(
   const errorKey = `${toolCamelPlural(endpoints.tool)}:error`;
   return {
     ...listQueries(endpoints),
+    detailQuery: detailQueryOf(endpoints),
     create: endpoints.create,
     duplicate: endpoints.duplicate,
     remove: endpoints.remove,
@@ -511,6 +528,7 @@ const fileEndpoints = {
 
 const fileHooks = {
   ...listQueries(fileEndpoints),
+  detailQuery: detailQueryOf(fileEndpoints),
   create: createFile,
   duplicate: duplicateFile,
   remove: fileEndpoints.remove,
@@ -618,6 +636,11 @@ interface ToolQueries {
     queryKey: CacheKey;
     queryFn: () => Promise<ToolListPage>;
   };
+  /** Reads one — what the page title asks of whichever tool the route is in. */
+  detailQuery: (
+    communityId: number,
+    id: number
+  ) => { queryKey: CacheKey; queryFn: () => Promise<{ name: string }> };
   /** Makes one from a name and its initiative — what `useCreateTool` sends every tool. */
   create: (
     communityId: number,
@@ -658,6 +681,13 @@ export const TOOL_HOOKS = {
 export const toolListQuery = (tool: Tool, communityId: number, params?: ToolListParams) => {
   const listQuery: ToolQueries["listQuery"] = TOOL_HOOKS[tool].listQuery;
   return listQuery(communityId, params);
+};
+
+/** One row of a tool, typed as any tool's: for a caller that holds the tool
+ *  as a value and only needs what every row carries. */
+export const toolDetailQuery = (tool: Tool, communityId: number, id: number) => {
+  const detailQuery: ToolQueries["detailQuery"] = TOOL_HOOKS[tool].detailQuery;
+  return detailQuery(communityId, id);
 };
 
 /**

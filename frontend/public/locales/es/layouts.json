@@ -100,6 +100,11 @@
   "opensFirst": "Se abre primero",
   "shownInMenu": "Mostrar en el menú de diseños",
   "hiddenList": "{{name}} (oculto)",
+  "views": "Vistas",
+  "taskPages": "Páginas de tareas",
+  "pages": "Páginas",
+  "hidden": "Oculta",
+  "showView": "Mostrar {{name}} en el menú de diseños",
   "asShipped": "Original",
   "saveError": "No se pudieron guardar los diseños",
   "listHelp": {

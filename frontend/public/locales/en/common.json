@@ -76,6 +76,7 @@
   "copyUnavailable": "Could not copy — copy it by hand",
   "untitled": "Untitled",
   "appName": "initiative",
+  "pageTitle": "{{name}} - Initiative",
   "send": "Send",
   "submitting": "Sending…",
   "clear": "Clear",
@@ -381,7 +382,8 @@
     "unsavedTitle": "Discard unsaved changes?",
     "unsavedBody": "You have an unsaved description. If you leave now, it will be lost.",
     "leave": "Leave",
-    "stay": "Stay"
+    "stay": "Stay",
+    "undoSuggestion": "Undo suggestion"
   },
   "kinds": {
     "project": {

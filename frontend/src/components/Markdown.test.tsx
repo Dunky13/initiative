@@ -1,6 +1,10 @@
+import { Capacitor } from "@capacitor/core";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import { apiClient } from "@/api/client";
+import { ThemeContext } from "@/hooks/useTheme";
 
 import { Markdown } from "./Markdown";
 
@@ -107,5 +111,99 @@ describe("Markdown", () => {
     expect(away).toHaveAttribute("target", "_blank");
     expect(away).toHaveAttribute("rel", "noopener noreferrer");
     expect(screen.getByRole("link", { name: "home" })).not.toHaveAttribute("target");
+  });
+
+  it("draws a release's screenshot in the theme the app is in", () => {
+    const content = "![The Gantt view](docs/images/releases/gantt.webp)";
+    const theme = (resolvedTheme: "light" | "dark") => ({
+      theme: resolvedTheme,
+      resolvedTheme,
+      setTheme: () => {},
+      toggleTheme: () => {},
+    });
+
+    const { unmount } = render(
+      <ThemeContext value={theme("light")}>
+        <Markdown surface="release" remoteImages content={content} />
+      </ThemeContext>
+    );
+    expect(screen.getByAltText("The Gantt view")).toHaveAttribute(
+      "src",
+      "https://beyonders-studio.github.io/initiative/images/releases/gantt.webp"
+    );
+    unmount();
+
+    render(
+      <ThemeContext value={theme("dark")}>
+        <Markdown surface="release" remoteImages content={content} />
+      </ThemeContext>
+    );
+    expect(screen.getByAltText("The Gantt view")).toHaveAttribute(
+      "src",
+      "https://beyonders-studio.github.io/initiative/images/releases/gantt.dark.webp"
+    );
+  });
+
+  it("loads a release's screenshot from the docs site in the native app too", () => {
+    vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
+    vi.spyOn(apiClient.defaults, "baseURL", "get").mockReturnValue(
+      "https://example.com/initiative/api/v1"
+    );
+    render(
+      <Markdown
+        surface="release"
+        remoteImages
+        content="![The Gantt view](docs/images/releases/gantt.webp)"
+      />
+    );
+    expect(screen.getByAltText("The Gantt view")).toHaveAttribute(
+      "src",
+      "https://beyonders-studio.github.io/initiative/images/releases/gantt.webp"
+    );
+    vi.restoreAllMocks();
+  });
+
+  it("scrolls a release's pictures sideways as a strip when there are several", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <Markdown
+        surface="release"
+        remoteImages
+        content={[
+          "- **Task types.** Every project starts with four.",
+          "",
+          "  ![The task types in settings](docs/images/releases/task-types.webp)",
+          "  ![A board showing each type](docs/images/releases/type-icons.webp)",
+        ].join("\n")}
+      />
+    );
+
+    const settings = screen.getByAltText("The task types in settings");
+    const board = screen.getByAltText("A board showing each type");
+    expect(settings.closest("p")).toBeNull();
+    const strip = settings.closest(".overflow-x-auto");
+    expect(strip).not.toBeNull();
+    expect(strip).toContainElement(board);
+    expect(container).toHaveTextContent("2");
+
+    await user.click(screen.getByRole("button", { name: /A board showing each type/ }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("keeps a lone picture, or one beside text, in its paragraph", () => {
+    render(
+      <Markdown
+        surface="release"
+        remoteImages
+        content={[
+          "![The Gantt view](docs/images/releases/gantt.webp)",
+          "",
+          "See ![the board](docs/images/releases/board.webp) and ![the table](docs/images/releases/table.webp)",
+        ].join("\n")}
+      />
+    );
+    expect(screen.getByAltText("The Gantt view").closest("p")).not.toBeNull();
+    expect(screen.getByAltText("the board").closest("p")).not.toBeNull();
+    expect(screen.getByAltText("the table").closest(".overflow-x-auto")).toBeNull();
   });
 });

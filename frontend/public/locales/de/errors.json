@@ -732,6 +732,7 @@
   "DASHBOARD_VIEW_MODE_NOT_ALLOWED": "Deine Rolle darf Dashboards nicht als Initiative ausführen. Frag eine Initiativleitung.",
   "DASHBOARD_VIEW_MODE_EDIT_NOT_ALLOWED": "Dieses Dashboard läuft als Initiative, daher brauchst du zum Ändern der Widgets die Berechtigung, Dashboards als Initiative auszuführen. Stelle „Dashboard ausführen als“ auf Einzelperson, um zu bearbeiten.",
   "ACCESS_GRANT_MODERATE_NOT_HELD": "Moderationszugriff ist für Personen, die Inhalte moderieren, und kann nie selbst erteilt werden.",
+  "ACCESS_GRANT_ONLY_MODERATE": "Moderatoren können nur Moderationszugriff anfordern.",
   "HOLD_TARGET_NOT_FOUND": "Hier gibt es nichts zurückzuhalten.",
   "HOLD_NOT_ALLOWED": "Nur die Moderation dieser Community kann Inhalte für die Plattform zurückhalten.",
   "HOLD_ALREADY_HELD": "Das wird bereits für die Plattform zurückgehalten.",

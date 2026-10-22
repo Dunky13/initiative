@@ -247,7 +247,7 @@ def _user_actions(
             actions.append(UserAction.clear_custom_status)
         if target.profile_decorations:
             actions.append(UserAction.clear_decorations)
-    if acts and can(Capability.USERS_MANAGE):
+    if acts and can(Capability.CONTENT_MODERATE):
         if target.status == UserStatus.active:
             actions.append(UserAction.suspend)
         if target.status == UserStatus.suspended:
@@ -953,7 +953,7 @@ async def set_user_suspension(
     user_id: int,
     payload: OperatorSuspensionUpdate,
     session: SystemSessionDep,
-    current_user: UsersManageDep,
+    current_user: ContentModerateDep,
     act_case: ActCaseDep,
 ) -> OperatorUserRead:
     """Freeze an account, or let it go.
@@ -964,7 +964,7 @@ async def set_user_suspension(
     still signs in and reaches their own account, which is how they can be told
     why.
 
-    Gated on ``users.manage`` (moderator and above). No PAM grant is involved:
+    Gated on ``content.moderate`` (moderator and above). No PAM grant is involved:
     this is a platform action about an account, not access to a guild's
     content.
     """

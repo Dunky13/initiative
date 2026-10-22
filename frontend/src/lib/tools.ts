@@ -213,6 +213,24 @@ export const toolRouteSegment = (tool: Tool | ChildKind): string =>
 export const toolForRouteSegment = (segment: string): Tool | null =>
   TOOLS.find((tool) => toolRouteSegment(tool) === segment) ?? null;
 
+/**
+ * The tool entity a path is inside, e.g. "/c/1/i/2/projects/3/tasks/5" →
+ * project 3. The OUTERMOST one wins: a task, a wiki's page, a file read
+ * inside a wiki and a tool's settings all nest under their tool's id, so they
+ * read as that tool. Null anywhere that is no tool's page.
+ */
+export const toolInPath = (pathname: string): { tool: Tool; id: number } | null => {
+  const segments = pathname.split("/");
+  for (let i = 0; i < segments.length - 1; i++) {
+    const tool = toolForRouteSegment(segments[i]);
+    const id = Number(segments[i + 1]);
+    if (tool && /^\d+$/.test(segments[i + 1]) && id > 0) {
+      return { tool, id };
+    }
+  }
+  return null;
+};
+
 /** "counter_group" → "counterGroups" — i18n namespace, palette group key. */
 export const toolCamelPlural = (tool: Tool): string =>
   toolPlural(tool).replace(/_(\w)/g, (_, c: string) => c.toUpperCase());

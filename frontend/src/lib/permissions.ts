@@ -29,6 +29,7 @@ export const Capability = {
   contentModerate: "content.moderate",
   dataBypass: "data.bypass",
   accessRequest: "access.request",
+  accessRequestAny: "access.request_any",
   accessApprove: "access.approve",
   configManage: "config.manage",
   pluginsManage: "plugins.manage",

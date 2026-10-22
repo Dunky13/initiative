@@ -95,6 +95,9 @@ interface ProseImageProps {
   title?: string;
   /** The picture itself — its size cap, border, corners. */
   className?: string;
+  /** Fill the box it sits in, the picture fitted inside it — for a tile of a
+   *  set size rather than a picture at its own. */
+  fill?: boolean;
 }
 
 /**
@@ -105,7 +108,7 @@ interface ProseImageProps {
  * Its size is not known ahead, so no space is reserved: it keeps its own
  * width, capped at the column's, rather than being stretched to fill it.
  */
-export const ProseImage = ({ src, alt = "", title, className }: ProseImageProps) => {
+export const ProseImage = ({ src, alt = "", title, className, fill = false }: ProseImageProps) => {
   const { t } = useTranslation("common");
   const scope = useContext(ScopeContext);
   const inLink = useContext(InLinkContext);
@@ -125,8 +128,14 @@ export const ProseImage = ({ src, alt = "", title, className }: ProseImageProps)
       src={src}
       alt={alt}
       title={title}
-      className="inline-block max-w-full bg-transparent align-bottom"
-      imgClassName={cn("h-auto w-auto max-w-full object-contain", className)}
+      className={cn(
+        "bg-transparent",
+        fill ? "block h-full w-full" : "inline-block max-w-full align-bottom"
+      )}
+      imgClassName={cn(
+        fill ? "h-full w-full object-contain" : "h-auto w-auto max-w-full object-contain",
+        className
+      )}
     />
   );
 
@@ -138,7 +147,10 @@ export const ProseImage = ({ src, alt = "", title, className }: ProseImageProps)
       type="button"
       aria-label={alt ? t("lightbox.openNamed", { name: alt }) : t("lightbox.open")}
       onClick={() => buttonRef.current && scope.open(buttonRef.current)}
-      className="inline-block max-w-full cursor-zoom-in rounded-md align-bottom focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        "cursor-zoom-in rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        fill ? "block h-full w-full" : "inline-block max-w-full align-bottom"
+      )}
     >
       {picture}
     </button>

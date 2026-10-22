@@ -338,7 +338,7 @@ async def test_support_can_clear_a_lost_factor(
     """The lost-phone path: somebody with the run of platform accounts takes
     the factor off, and the account signs in with its password again."""
     user, _secret, _codes = await _enrol(client, session, "lostphone@example.com")
-    staff = await acting_user("moderator")
+    staff = await acting_user("support")
 
     async def roster_says_enrolled() -> bool:
         roster = await client.get(
@@ -368,7 +368,7 @@ async def test_clearing_a_factor_is_not_for_everybody(
     client: AsyncClient, session: AsyncSession, acting_user
 ):
     user, _secret, _codes = await _enrol(client, session, "notyours@example.com")
-    bystander = await acting_user("support")
+    bystander = await acting_user("moderator")
 
     response = await client.delete(
         f"/api/v1/operator/users/{user.id}/second-factor", headers=bystander.headers

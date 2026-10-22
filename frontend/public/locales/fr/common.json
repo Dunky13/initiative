@@ -75,6 +75,7 @@
   "copyUnavailable": "Copie impossible — copiez-le à la main",
   "untitled": "Sans titre",
   "appName": "initiative",
+  "pageTitle": "{{name}} - Initiative",
   "send": "Envoyer",
   "submitting": "Envoi en cours…",
   "clear": "Effacer",
@@ -381,7 +382,8 @@
     "unsavedTitle": "Abandonner les modifications non enregistrées ?",
     "unsavedBody": "Vous avez une description non enregistrée. Si vous partez maintenant, elle sera perdue.",
     "leave": "Quitter",
-    "stay": "Rester"
+    "stay": "Rester",
+    "undoSuggestion": "Annuler la suggestion"
   },
   "kinds": {
     "project": {

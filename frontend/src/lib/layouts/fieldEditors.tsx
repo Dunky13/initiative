@@ -6,7 +6,14 @@
 
 import { useBlocker } from "@tanstack/react-router";
 import { Loader2, Sparkles, X } from "lucide-react";
-import { type ReactNode, type RefObject, useContext, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -34,7 +41,7 @@ import { TaskDescription } from "@/components/tasks/TaskDescription";
 import { Button } from "@/components/ui/button";
 import { ColorPickerPopover } from "@/components/ui/color-picker-popover";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -53,6 +60,28 @@ import { currentServerKey } from "@/lib/offlineSession";
 import { getItem, removeItem, setItem } from "@/lib/storage";
 
 import { FieldFrame, ReadField, sameJson, useFieldDraft } from "./editing";
+
+/** Without `field-sizing`, a textarea stays as many rows high as it was
+ *  given, so it is grown to what it holds, again whenever its width changes. */
+const useFittedHeight = (text: string) => {
+  const box = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const field = box.current;
+    if (!field || CSS.supports("field-sizing", "content")) return;
+    let width = -1;
+    const grow = () => {
+      if (field.clientWidth === width) return;
+      width = field.clientWidth;
+      field.style.height = "auto";
+      field.style.height = `${field.scrollHeight + field.offsetHeight - field.clientHeight}px`;
+    };
+    grow();
+    const observer = new ResizeObserver(grow);
+    observer.observe(field);
+    return () => observer.disconnect();
+  }, [text]);
+  return box;
+};
 
 /** An item's title, which is its detail's heading, saved as `field` (a queue
  *  item's is its `label`). It cannot be emptied: leaving it blank puts the
@@ -85,7 +114,7 @@ export const TitleField = <I, P>({
   const adding = useContext(ItemDraftContext) !== null;
   const besides = (title: ReactNode) =>
     subscribe && !adding ? (
-      <div className="flex min-w-0 flex-1 items-start gap-1">
+      <div className="flex min-w-0 grow basis-72 items-start gap-1">
         {title}
         <SubscribeButton kind={subscribe.kind} entityId={subscribe.id} className="mt-0.5" />
       </div>
@@ -98,9 +127,10 @@ export const TitleField = <I, P>({
       ? false
       : save.save({ patch: { [field]: title } as P, shows: { [field]: title } as Partial<I> });
   });
+  const box = useFittedHeight(draft.value);
   if (readOnly) {
     return besides(
-      <h1 className="min-w-0 flex-1 break-words font-semibold text-3xl tracking-tight">
+      <h1 className="min-w-0 grow basis-72 break-words font-semibold text-2xl tracking-tight sm:text-3xl">
         {value || placeholder}
       </h1>
     );
@@ -114,15 +144,20 @@ export const TitleField = <I, P>({
       save={save}
       changed={draft.changed}
       keys={draft.keys}
-      className="flex-1"
+      // Too narrow a row for this beside its actions puts them above it.
+      className="grow basis-72"
     >
       <h1 className="sr-only">{value}</h1>
-      <Input
+      {/* One line of text that wraps, so a long title shows whole on a phone. */}
+      <Textarea
+        ref={box}
         id={id}
+        rows={1}
+        aria-multiline="false"
         value={draft.value}
-        onChange={(event) => draft.change(event.target.value)}
+        onChange={(event) => draft.change(event.target.value.replace(/\s*[\r\n]+\s*/g, " "))}
         placeholder={placeholder}
-        className="h-auto font-semibold text-3xl tracking-tight shadow-none focus-visible:ring-0 sm:text-3xl"
+        className="field-sizing-content min-h-0 resize-none py-1 font-semibold text-2xl tracking-tight shadow-none focus-visible:ring-0 sm:text-3xl"
       />
     </FieldFrame>
   );
@@ -545,6 +580,11 @@ export const DescriptionField = <I, P>({
   const [draft, setDraftState] = useState(() => readDescriptionDraft(key));
   const [discarding, setDiscarding] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  // The written description, and the draft it replaced, for Undo suggestion.
+  const [suggested, setSuggested] = useState<{
+    text: string;
+    before: DescriptionDraft | null;
+  } | null>(null);
   // Read by the description written for the reader, which lands later.
   const latest = useRef(draft);
 
@@ -589,6 +629,7 @@ export const DescriptionField = <I, P>({
     setSuggesting(true);
     try {
       const text = await suggest.run();
+      setSuggested({ text, before: latest.current });
       setDraft({ text, base: latest.current?.base ?? value });
     } catch {
       // The request says what went wrong.
@@ -704,6 +745,19 @@ export const DescriptionField = <I, P>({
               <Button type="button" size="sm" variant="outline" onClick={cancel}>
                 {t("cancel")}
               </Button>
+              {suggested !== null && open.text === suggested.text ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setDraft(suggested.before);
+                    setSuggested(null);
+                  }}
+                >
+                  {t("descriptionField.undoSuggestion")}
+                </Button>
+              ) : null}
             </div>
           )}
         </div>

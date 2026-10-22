@@ -591,8 +591,8 @@ export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 export const UserRole = {
   member: "member",
-  support: "support",
   moderator: "moderator",
+  support: "support",
   operator: "operator",
   owner: "owner",
 } as const;
@@ -2062,6 +2062,7 @@ export const Capability = {
   rolesassign: "roles.assign",
   databypass: "data.bypass",
   accessrequest: "access.request",
+  accessrequest_any: "access.request_any",
   accessapprove: "access.approve",
   configmanage: "config.manage",
   pluginsmanage: "plugins.manage",
@@ -6027,13 +6028,17 @@ export interface GalleryUpdate {
  * Suggested checklist lines, as text — the caller decides which to keep.
  */
 export interface GenerateChecklistResponse {
+  comments_read: number;
+  comments_total: number;
   items: string[];
 }
 
 /**
- * Response schema for description generation.
+ * A description for the reader to start from.
  */
 export interface GenerateDescriptionResponse {
+  comments_read: number;
+  comments_total: number;
   description: string;
 }
 

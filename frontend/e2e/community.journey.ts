@@ -2,19 +2,14 @@ import { randomBytes } from "node:crypto";
 
 import { type Browser, expect, type Page, test } from "@playwright/test";
 
+import { giveBirthdate, laterForUpdates } from "./support";
+
 // A fresh install, as somebody meets it: the first person to register owns it
 // and gets a community, builds an initiative, a project and a task, and finds
 // them again after signing back in. Then they invite somebody, who joins and
 // sees only what they have been let into.
 
 test.describe.configure({ mode: "serial" });
-
-// A server newer than the page it served offers to reload, whenever it
-// notices; somebody in the middle of something says not yet.
-async function laterForUpdates(page: Page) {
-  const prompt = page.getByRole("dialog", { name: /^Version .* is available$/ });
-  await page.addLocatorHandler(prompt, () => prompt.getByRole("button", { name: "Later" }).click());
-}
 
 test.beforeEach(async ({ page }) => laterForUpdates(page));
 
@@ -38,21 +33,6 @@ const community = "Olive's Community";
 const made = { communityPath: "", initiativePath: "", projectId: "" };
 
 const next = (page: Page) => page.getByRole("button", { name: "Continue" }).click();
-
-/**
- * The date of birth, typed into the picker. Every account is asked it once: a
- * fresh install asks beside the handle, and an account that signs up without
- * it meets a screen that asks before anything else.
- */
-async function giveBirthdate(page: Page) {
-  const field = page.getByRole("button", { name: "Date of birth" });
-  await field.click();
-  const typed = page.getByRole("textbox", { name: "Type or pick a date" });
-  await typed.fill("1990-04-12");
-  await typed.press("Enter");
-  await page.keyboard.press("Escape");
-  await expect(field).toContainText("Apr 12, 1990");
-}
 
 /** The start flow from "About you" on: a handle and a birthday, then the account. */
 async function register(page: Page, person: typeof owner, between?: () => Promise<void>) {

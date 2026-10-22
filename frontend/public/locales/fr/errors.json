@@ -732,6 +732,7 @@
   "DASHBOARD_VIEW_MODE_NOT_ALLOWED": "Votre rôle ne peut pas exécuter les tableaux de bord en tant qu'Initiative. Demandez à un responsable de l'initiative.",
   "DASHBOARD_VIEW_MODE_EDIT_NOT_ALLOWED": "Ce tableau de bord s'exécute en tant que son initiative : modifier ses widgets demande l'autorisation d'exécuter les tableaux de bord en tant qu'Initiative. Passez « Exécuter le tableau de bord en tant que » sur Individuel pour le modifier.",
   "ACCESS_GRANT_MODERATE_NOT_HELD": "L'accès de modération est réservé aux personnes qui modèrent du contenu et ne s'auto-attribue jamais.",
+  "ACCESS_GRANT_ONLY_MODERATE": "Les modérateurs ne peuvent demander qu'un accès de modération.",
   "HOLD_TARGET_NOT_FOUND": "Il n'y a rien à retenir ici.",
   "HOLD_NOT_ALLOWED": "Seule la modération de cette communauté peut retenir du contenu pour la plateforme.",
   "HOLD_ALREADY_HELD": "Ce contenu est déjà retenu pour la plateforme.",

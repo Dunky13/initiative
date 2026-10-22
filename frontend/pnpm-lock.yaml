@@ -87,8 +87,8 @@ importers:
         specifier: ^8.0.62
         version: 8.0.62(@capacitor/core@8.5.3)
       '@capgo/capacitor-updater':
-        specifier: ^8.51.3
-        version: 8.51.15(@capacitor/core@8.5.3)
+        specifier: ^8.53.0
+        version: 8.53.0(@capacitor/core@8.5.3)
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -390,6 +390,9 @@ importers:
       '@capacitor/cli':
         specifier: ^8.5.3
         version: 8.5.3(supports-color@5.5.0)
+      '@playwright/mcp':
+        specifier: 0.0.80
+        version: 0.0.80
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
@@ -738,8 +741,8 @@ packages:
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
 
-  '@capgo/capacitor-updater@8.51.15':
-    resolution: {integrity: sha512-eJxQrwMYjlaRY79r+1jJWzetgqeyVdXkkHTngVLVQq3/1BK6itOkO45wRzyFrrB9WZD84fY1ziGp8ItGCN3hWA==}
+  '@capgo/capacitor-updater@8.53.0':
+    resolution: {integrity: sha512-fJfHi/h6AwZLvLrRlztxFUhKt+CDCHiMsRLzuOT0wFUvqP2qIK/B39nMr8xNXuRLzQoQWBkriQJO1ZWzhq3Afg==}
     peerDependencies:
       '@capacitor/core': ^8.0.0
 
@@ -1821,6 +1824,11 @@ packages:
 
   '@oxc-project/types@0.154.0':
     resolution: {integrity: sha512-KYOUGQFlLWR+s4QMV2Q9ko38TZm7EdO87Qm7rvZLqk/webse/cDjtyxKhg/47l0byCbs/k46LT8qc4PKjAikzA==}
+
+  '@playwright/mcp@0.0.80':
+    resolution: {integrity: sha512-FOPXHm2SvFhAQylm10jMZ35B/SR2TaMLVkavAlwoG4N2qCb5RqbvhQYcu3zmXNyxR2DW0Ooxe+9XPVt5UjKRCQ==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   '@playwright/test@1.63.0':
     resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
@@ -5655,8 +5663,18 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
+  playwright-core@1.63.0-alpha-2026-08-31:
+    resolution: {integrity: sha512-1ek0Lyr12h6jcs/WTcNoVtzZkQp7D/90PsMuBW/Rm6h3AsWAbzpqj0geMv8+8Tzzr9CSUYvg9kznrVZINQMXXw==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   playwright@1.63.0:
     resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.63.0-alpha-2026-08-31:
+    resolution: {integrity: sha512-3XAsuznfu8jBVJ4QxdGvBkt0+b8ZFwuwJYyOfiIw5ZjUOrNLNRhKxzLzLuydou3gJ9c6eMwVqgzdiOwhy54Kzw==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -7166,7 +7184,7 @@ snapshots:
     dependencies:
       '@capacitor/core': 8.5.3
 
-  '@capgo/capacitor-updater@8.51.15(@capacitor/core@8.5.3)':
+  '@capgo/capacitor-updater@8.53.0(@capacitor/core@8.5.3)':
     dependencies:
       '@capacitor/core': 8.5.3
 
@@ -8273,6 +8291,11 @@ snapshots:
       - typescript
 
   '@oxc-project/types@0.154.0': {}
+
+  '@playwright/mcp@0.0.80':
+    dependencies:
+      playwright: 1.63.0-alpha-2026-08-31
+      playwright-core: 1.63.0-alpha-2026-08-31
 
   '@playwright/test@1.63.0':
     dependencies:
@@ -12248,9 +12271,15 @@ snapshots:
 
   playwright-core@1.63.0: {}
 
+  playwright-core@1.63.0-alpha-2026-08-31: {}
+
   playwright@1.63.0:
     dependencies:
       playwright-core: 1.63.0
+
+  playwright@1.63.0-alpha-2026-08-31:
+    dependencies:
+      playwright-core: 1.63.0-alpha-2026-08-31
 
   plist@3.1.1:
     dependencies:

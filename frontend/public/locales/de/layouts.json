@@ -100,6 +100,11 @@
   "opensFirst": "Wird zuerst geöffnet",
   "shownInMenu": "Im Layout-Menü anzeigen",
   "hiddenList": "{{name}} (ausgeblendet)",
+  "views": "Ansichten",
+  "taskPages": "Aufgabenseiten",
+  "pages": "Seiten",
+  "hidden": "Ausgeblendet",
+  "showView": "{{name}} im Layout-Menü anzeigen",
   "asShipped": "Wie ausgeliefert",
   "saveError": "Layouts konnten nicht gespeichert werden",
   "listHelp": {
