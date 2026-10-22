@@ -87,8 +87,8 @@ importers:
         specifier: ^8.0.62
         version: 8.0.62(@capacitor/core@8.5.3)
       '@capgo/capacitor-updater':
-        specifier: ^8.51.3
-        version: 8.51.15(@capacitor/core@8.5.3)
+        specifier: ^8.53.0
+        version: 8.53.0(@capacitor/core@8.5.3)
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -741,8 +741,8 @@ packages:
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
 
-  '@capgo/capacitor-updater@8.51.15':
-    resolution: {integrity: sha512-eJxQrwMYjlaRY79r+1jJWzetgqeyVdXkkHTngVLVQq3/1BK6itOkO45wRzyFrrB9WZD84fY1ziGp8ItGCN3hWA==}
+  '@capgo/capacitor-updater@8.53.0':
+    resolution: {integrity: sha512-fJfHi/h6AwZLvLrRlztxFUhKt+CDCHiMsRLzuOT0wFUvqP2qIK/B39nMr8xNXuRLzQoQWBkriQJO1ZWzhq3Afg==}
     peerDependencies:
       '@capacitor/core': ^8.0.0
 
@@ -7184,7 +7184,7 @@ snapshots:
     dependencies:
       '@capacitor/core': 8.5.3
 
-  '@capgo/capacitor-updater@8.51.15(@capacitor/core@8.5.3)':
+  '@capgo/capacitor-updater@8.53.0(@capacitor/core@8.5.3)':
     dependencies:
       '@capacitor/core': 8.5.3
 
