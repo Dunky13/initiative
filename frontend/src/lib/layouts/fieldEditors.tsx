@@ -34,7 +34,7 @@ import { TaskDescription } from "@/components/tasks/TaskDescription";
 import { Button } from "@/components/ui/button";
 import { ColorPickerPopover } from "@/components/ui/color-picker-popover";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -85,7 +85,7 @@ export const TitleField = <I, P>({
   const adding = useContext(ItemDraftContext) !== null;
   const besides = (title: ReactNode) =>
     subscribe && !adding ? (
-      <div className="flex min-w-0 flex-1 items-start gap-1">
+      <div className="flex min-w-0 grow basis-72 items-start gap-1">
         {title}
         <SubscribeButton kind={subscribe.kind} entityId={subscribe.id} className="mt-0.5" />
       </div>
@@ -100,7 +100,7 @@ export const TitleField = <I, P>({
   });
   if (readOnly) {
     return besides(
-      <h1 className="min-w-0 flex-1 break-words font-semibold text-3xl tracking-tight">
+      <h1 className="min-w-0 grow basis-72 break-words font-semibold text-2xl tracking-tight sm:text-3xl">
         {value || placeholder}
       </h1>
     );
@@ -114,15 +114,19 @@ export const TitleField = <I, P>({
       save={save}
       changed={draft.changed}
       keys={draft.keys}
-      className="flex-1"
+      // Too narrow a row for this beside its actions puts them above it.
+      className="grow basis-72"
     >
       <h1 className="sr-only">{value}</h1>
-      <Input
+      {/* One line of text that wraps, so a long title shows whole on a phone. */}
+      <Textarea
         id={id}
+        rows={1}
+        aria-multiline="false"
         value={draft.value}
-        onChange={(event) => draft.change(event.target.value)}
+        onChange={(event) => draft.change(event.target.value.replace(/\s*[\r\n]+\s*/g, " "))}
         placeholder={placeholder}
-        className="h-auto font-semibold text-3xl tracking-tight shadow-none focus-visible:ring-0 sm:text-3xl"
+        className="field-sizing-content min-h-0 resize-none py-1 font-semibold text-2xl tracking-tight shadow-none focus-visible:ring-0 sm:text-3xl"
       />
     </FieldFrame>
   );
