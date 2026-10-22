@@ -10,8 +10,11 @@ export const REPO_URL = "https://github.com/beyonders-studio/initiative";
 export const RELEASES_URL = `${REPO_URL}/releases`;
 export const CHANGELOG_URL = `${REPO_URL}/blob/main/CHANGELOG.md`;
 
+/** The docs site's root: `docs/` as GitHub Pages publishes it on `main`. */
+export const DOCS_SITE_URL = "https://beyonders-studio.github.io/initiative/";
+
 /** The English help center. Built from `docs/en/` and published on `main`. */
-export const DOCS_URL = "https://beyonders-studio.github.io/initiative/en/";
+export const DOCS_URL = `${DOCS_SITE_URL}en/`;
 
 /** A page of the help center by its path under `docs/en/`, with or without a
  *  leading slash; a fragment carries through untouched. */
