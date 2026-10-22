@@ -100,6 +100,11 @@
   "opensFirst": "S'ouvre en premier",
   "shownInMenu": "Afficher dans le menu des dispositions",
   "hiddenList": "{{name}} (masqué)",
+  "views": "Vues",
+  "taskPages": "Pages des tâches",
+  "pages": "Pages",
+  "hidden": "Masquée",
+  "showView": "Afficher {{name}} dans le menu des dispositions",
   "asShipped": "D'origine",
   "saveError": "Impossible d'enregistrer les dispositions",
   "listHelp": {

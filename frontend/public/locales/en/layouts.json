@@ -100,6 +100,11 @@
   "opensFirst": "Opens first",
   "shownInMenu": "Shown in the layout menu",
   "hiddenList": "{{name}} (hidden)",
+  "views": "Views",
+  "taskPages": "Task pages",
+  "pages": "Pages",
+  "hidden": "Hidden",
+  "showView": "Show {{name}} in the layout menu",
   "asShipped": "As shipped",
   "saveError": "Couldn't save the layouts",
   "listHelp": {
