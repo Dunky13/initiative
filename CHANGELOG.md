@@ -11,15 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Task types.** Every project starts with **Task**, **Bug**, **Idea** and **Milestone**, each with its own task page and starting content; add more from a shelf of ready-made types in **Project settings → Task types**. Existing tasks become **Task**, keeping any task page you had changed.
 
-  ![A project's task types in Project settings: Task, Bug, Idea and Milestone, each with its own icon, color and page](frontend/public/release-images/task-types.webp)
+  ![A project's task types in Project settings: Task, Bug, Idea and Milestone, each with its own icon, color and page](docs/images/releases/task-types.webp)
 
 - **Gantt view for projects.** Tasks as bars on a day, week or month timeline: drag to reschedule, drag between bars to make one task wait on another, and fold subtasks under their parent. A project that opened on its Calendar opens on its Gantt.
 
-  ![A project's Gantt view: tasks as bars across six weeks, a milestone at the end, and arrows from each task to what it waits on](frontend/public/release-images/gantt.webp)
+  ![A project's Gantt view: tasks as bars across six weeks, a milestone at the end, and arrows from each task to what it waits on](docs/images/releases/gantt.webp)
 
 - **Group by any field.** Group a table, board or Gantt by any field whose values repeat, from assignees and tags to a property or a date by week or month. Choose what each view offers in **Edit layouts**.
 
-  ![A project's Gantt grouped by assignee, each person's tasks under their name and unassigned work at the end](frontend/public/release-images/group-by-assignees.webp)
+  ![A project's Gantt grouped by assignee, each person's tasks under their name and unassigned work at the end](docs/images/releases/group-by-assignees.webp)
 
 - **Choose a project's views.** Show or hide Table, Board, Gantt and Calendar in **Edit layouts**. New projects start with the board alone; existing projects keep the views they had.
 - **Several My tasks widgets on Home.** Each keeps its own filters and columns, so one can show this week's work and another everything high priority.

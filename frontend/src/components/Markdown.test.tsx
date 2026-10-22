@@ -114,7 +114,7 @@ describe("Markdown", () => {
   });
 
   it("draws a release's screenshot in the theme the app is in", () => {
-    const content = "![The Gantt view](frontend/public/release-images/gantt.webp)";
+    const content = "![The Gantt view](docs/images/releases/gantt.webp)";
     const theme = (resolvedTheme: "light" | "dark") => ({
       theme: resolvedTheme,
       resolvedTheme,
@@ -129,7 +129,7 @@ describe("Markdown", () => {
     );
     expect(screen.getByAltText("The Gantt view")).toHaveAttribute(
       "src",
-      "/release-images/gantt.webp"
+      "https://beyonders-studio.github.io/initiative/images/releases/gantt.webp"
     );
     unmount();
 
@@ -140,11 +140,11 @@ describe("Markdown", () => {
     );
     expect(screen.getByAltText("The Gantt view")).toHaveAttribute(
       "src",
-      "/release-images/gantt.dark.webp"
+      "https://beyonders-studio.github.io/initiative/images/releases/gantt.dark.webp"
     );
   });
 
-  it("draws a release's screenshot from the server it came from in the native app", () => {
+  it("loads a release's screenshot from the docs site in the native app too", () => {
     vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
     vi.spyOn(apiClient.defaults, "baseURL", "get").mockReturnValue(
       "https://example.com/initiative/api/v1"
@@ -153,12 +153,12 @@ describe("Markdown", () => {
       <Markdown
         surface="release"
         remoteImages
-        content="![The Gantt view](frontend/public/release-images/gantt.webp)"
+        content="![The Gantt view](docs/images/releases/gantt.webp)"
       />
     );
     expect(screen.getByAltText("The Gantt view")).toHaveAttribute(
       "src",
-      "https://example.com/initiative/release-images/gantt.webp"
+      "https://beyonders-studio.github.io/initiative/images/releases/gantt.webp"
     );
     vi.restoreAllMocks();
   });
@@ -172,8 +172,8 @@ describe("Markdown", () => {
         content={[
           "- **Task types.** Every project starts with four.",
           "",
-          "  ![The task types in settings](frontend/public/release-images/task-types.webp)",
-          "  ![A board showing each type](frontend/public/release-images/type-icons.webp)",
+          "  ![The task types in settings](docs/images/releases/task-types.webp)",
+          "  ![A board showing each type](docs/images/releases/type-icons.webp)",
         ].join("\n")}
       />
     );
@@ -196,9 +196,9 @@ describe("Markdown", () => {
         surface="release"
         remoteImages
         content={[
-          "![The Gantt view](frontend/public/release-images/gantt.webp)",
+          "![The Gantt view](docs/images/releases/gantt.webp)",
           "",
-          "See ![the board](frontend/public/release-images/board.webp) and ![the table](frontend/public/release-images/table.webp)",
+          "See ![the board](docs/images/releases/board.webp) and ![the table](docs/images/releases/table.webp)",
         ].join("\n")}
       />
     );

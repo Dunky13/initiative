@@ -98,9 +98,8 @@ const pictureWith = (className?: string) =>
     );
   };
 
-/** A screenshot in the release notes, in the theme the app is drawn in. The
- *  notes are the server's, so on native the picture is the server's too: the
- *  app's own bundle may be older than the server it talks to. */
+/** A screenshot in the release notes, in the theme the app is drawn in,
+ *  loaded from the docs site (see `lib/releaseImages`). */
 function ReleasePicture({
   src,
   alt,
@@ -113,10 +112,9 @@ function ReleasePicture({
   fill?: boolean;
 }) {
   const dark = useContext(ThemeContext)?.resolvedTheme === "dark";
-  const path = releaseImageUrl(src, dark);
   return (
     <ProseImage
-      src={resolveUploadUrl(path) ?? path}
+      src={releaseImageUrl(src, dark)}
       alt={alt ?? ""}
       title={title}
       fill={fill}

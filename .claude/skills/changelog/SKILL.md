@@ -116,14 +116,14 @@ Bullets in `Added` and `Changed` with something to look at — a new screen,
 view, dialog or control — can carry a picture, drawn under the bullet in the
 app's theme. Propose which (skip fixes, operator changes, removals, anything
 invisible, and bullets that already have a
-`![…](frontend/public/release-images/…)` line) and confirm the list with the
+`![…](docs/images/releases/…)` line) and confirm the list with the
 user before shooting. One picture per bullet is the norm; use several, as a strip,
 when the change shows on several screens.
 
 The machinery (read these before the first shot of a session):
 
 - `frontend/e2e/shots/shoot.ts` — `shoot(page, name, locator?)` writes
-  `frontend/public/release-images/<name>.webp` and `<name>.dark.webp`.
+  `docs/images/releases/<name>.webp` and `<name>.dark.webp`.
 - `frontend/e2e/shots/gantt.shot.ts` — the example shot; `barovia.ts` opens
   the seed's best-filled project (dated, typed, linked tasks) and switches its
   list, showing the Gantt in its layout menu first if it is hidden.
@@ -195,7 +195,7 @@ test("gantt", async ({ page }) => {
 ```
 
 - **Name** the picture for what it shows (`gantt-dependencies`, not `0-77-1`).
-  `ls frontend/public/release-images/` first: reusing a name replaces a
+  `ls docs/images/releases/` first: reusing a name replaces a
   picture an earlier release already shows.
 - **Navigate by role and name**, never CSS classes. Seeded ids differ per
   database, so reach a project by clicking its name, not a `/c/1/i/2/…` URL.
@@ -231,7 +231,7 @@ GitHub draws it too:
 ```markdown
 - **Gantt view for projects.** Tasks as bars on a day, week or month timeline…
 
-  ![A project's Gantt view: tasks as bars across three weeks, with arrows from each task to what it waits on](frontend/public/release-images/gantt.webp)
+  ![A project's Gantt view: tasks as bars across three weeks, with arrows from each task to what it waits on](docs/images/releases/gantt.webp)
 ```
 
 The alt text says what the picture shows, in one sentence.
@@ -242,8 +242,8 @@ strip of tiles that scrolls sideways, with the count in its corner, each
 opening full size in the lightbox:
 
 ```markdown
-  ![The task types in settings](frontend/public/release-images/task-types.webp)
-  ![A board showing each task's type](frontend/public/release-images/task-type-icons.webp)
+  ![The task types in settings](docs/images/releases/task-types.webp)
+  ![A board showing each task's type](docs/images/releases/task-type-icons.webp)
 ```
 
 ## 6. Check and hand back

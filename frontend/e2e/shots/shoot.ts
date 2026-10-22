@@ -4,19 +4,20 @@ import { fileURLToPath } from "node:url";
 
 import { type BrowserContext, type Locator, type Page, test } from "@playwright/test";
 
-const RELEASE_IMAGES = fileURLToPath(new URL("../../public/release-images/", import.meta.url));
+const RELEASE_IMAGES = fileURLToPath(new URL("../../../docs/images/releases/", import.meta.url));
 
 /** Small enough to keep in the repository, sharp enough to read a label. */
 const QUALITY = 0.85;
 
 /**
  * Take a release picture of `target` (the whole window if none) and save it as
- * `public/release-images/<name>.webp`, or `<name>.dark.webp` when the project
- * running it is the dark one. `name` may hold a folder, such as `0.77/gantt`.
+ * `docs/images/releases/<name>.webp`, or `<name>.dark.webp` when the project
+ * running it is the dark one. The docs site publishes them; no install carries
+ * them. `name` may hold a folder, such as `0.77/gantt`.
  *
  * In CHANGELOG.md, under the change it shows:
  *
- *     ![What it shows](frontend/public/release-images/<name>.webp)
+ *     ![What it shows](docs/images/releases/<name>.webp)
  */
 export async function shoot(page: Page, name: string, target?: Locator) {
   const dark = test.info().project.use.colorScheme === "dark";

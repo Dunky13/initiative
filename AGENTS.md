@@ -179,13 +179,16 @@ in the version dialog and on **What's new**, in light or dark to match the app.
 2. With the dev environment running on its seed data, run
    `cd frontend && pnpm screenshots` (or `pnpm screenshots e2e/shots/<name>.shot.ts`).
    It signs in as `admin1@example.com` and writes
-   `frontend/public/release-images/<name>.webp` and `<name>.dark.webp`.
+   `docs/images/releases/<name>.webp` and `<name>.dark.webp`.
 3. Look them over, then put the picture under its bullet, by its repository path
    so GitHub draws it too:
-   `![What it shows](frontend/public/release-images/<name>.webp)`.
+   `![What it shows](docs/images/releases/<name>.webp)`.
    Several pictures on consecutive lines under one bullet become a strip that
    scrolls sideways, each opening in the lightbox.
 
+The pictures live with the help center, so GitHub Pages publishes them when the
+release reaches `main` and the app loads them from there
+(`frontend/src/lib/releaseImages.ts`); no install or app update carries them.
 Name a picture for what it shows, not the release; a name already used would
 replace a released picture. `releaseImages.test.ts` fails when a picture the
 changelog names is missing either theme or its alt text.

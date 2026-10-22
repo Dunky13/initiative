@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Take the release screenshots (frontend/e2e/shots) of this checkout's running
-# dev environment, light and dark, into frontend/public/release-images/.
+# dev environment, light and dark, into docs/images/releases/ (published with
+# the docs site, not shipped in the app).
 #
 #   pnpm screenshots                            # every shot
 #   pnpm screenshots e2e/shots/gantt.shot.ts    # one
