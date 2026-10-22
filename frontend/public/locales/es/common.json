@@ -75,6 +75,7 @@
   "copyUnavailable": "No se pudo copiar: cópialo a mano",
   "untitled": "Sin título",
   "appName": "initiative",
+  "pageTitle": "{{name}} - Initiative",
   "send": "Enviar",
   "submitting": "Enviando…",
   "clear": "Limpiar",
@@ -381,7 +382,8 @@
     "unsavedTitle": "¿Descartar los cambios sin guardar?",
     "unsavedBody": "Tienes una descripción sin guardar. Si sales ahora, se perderá.",
     "leave": "Salir",
-    "stay": "Quedarme"
+    "stay": "Quedarme",
+    "undoSuggestion": "Deshacer sugerencia"
   },
   "kinds": {
     "project": {

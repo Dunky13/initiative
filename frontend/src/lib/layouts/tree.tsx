@@ -134,6 +134,9 @@ const stackClassName = ({ direction, gap: given, wrap, align, tone }: StackProps
       "flex w-full min-w-0",
       wrap && "flex-wrap",
       align === "start" && "items-start",
+      // A row holding an item's actions wraps them onto a line above the
+      // rest, where reversed wrapping turns its top into the cross end.
+      "item-actions-row:flex-wrap-reverse item-actions-row:items-end",
       GAP[gap]
     );
   }
