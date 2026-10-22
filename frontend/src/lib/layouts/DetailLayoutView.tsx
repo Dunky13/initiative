@@ -171,7 +171,17 @@ const ItemRelations = () => {
   );
 };
 
-const ItemActions = () => <>{useDrawn().home.actions}</>;
+/** What can be done with the item, at the end of the row it is in. A row too
+ *  narrow for them beside the title puts them on a line of their own above it
+ *  (the row's `stackClassName`). */
+const ItemActions = () => {
+  const { actions } = useDrawn().home;
+  return actions ? (
+    <div data-item-actions className="ml-auto shrink-0">
+      {actions}
+    </div>
+  ) : null;
+};
 
 /** The links an item being added is to be made with. */
 export const AddingLinks = createContext<{

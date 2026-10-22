@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { useChangelog } from "@/hooks/useSettings";
 import { dateTimeFormat } from "@/lib/intl";
 import { DOCS_URL, REPO_URL } from "@/lib/links";
+import { RELEASE_IMAGE_DIR } from "@/lib/releaseImages";
 
 import { DarkBand } from "./DarkBand";
 import { LandingShell } from "./LandingShell";
@@ -33,10 +34,11 @@ const headlines = (changes: string): string[] =>
 /**
  * The changelog is written to be read in the repository, so its links point
  * at files there. Docs pages go to the published docs; anything else to the
- * file on GitHub.
+ * file on GitHub, except the release's own pictures, which the app serves.
  */
 const publishLinks = (changes: string): string =>
-  changes.replace(/\]\((?!https?:|#|mailto:)([^)\s]+)\)/g, (_whole, target: string) => {
+  changes.replace(/\]\((?!https?:|#|mailto:)([^)\s]+)\)/g, (whole, target: string) => {
+    if (target.replace(/^\.\//, "").startsWith(RELEASE_IMAGE_DIR)) return whole;
     const [path, hash = ""] = target.split("#");
     const anchor = hash ? `#${hash}` : "";
     const docs = path.match(/^docs\/en\/(.+?)\.md$/);
@@ -202,7 +204,7 @@ export const WhatsNewPostPage = () => {
           </p>
         ) : entry ? (
           <article>
-            <Markdown remoteImages content={asPost(entry.changes)} />
+            <Markdown surface="release" remoteImages content={asPost(entry.changes)} />
           </article>
         ) : (
           <p className="text-muted-foreground">{t("whatsNew.notFound")}</p>

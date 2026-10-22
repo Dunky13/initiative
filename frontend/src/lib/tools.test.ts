@@ -40,6 +40,7 @@ import {
   toolCreateLabelKey,
   toolCreatePermission,
   toolDetailRoute,
+  toolInPath,
   toolListRoute,
   toolNavLabelKey,
   toolParamName,
@@ -526,5 +527,25 @@ describe("tool imports", () => {
         expect(labels[key], `${locale}/exports.json table.source.${key} is empty`).toBeTruthy();
       }
     }
+  });
+});
+
+describe("toolInPath", () => {
+  it("reads the tool and id a path is inside", () => {
+    expect(toolInPath("/c/1/i/2/counter-groups/3")).toEqual({ tool: Tool.counter_group, id: 3 });
+    expect(toolInPath("/c/1/calendars/5")).toEqual({ tool: Tool.calendar, id: 5 });
+  });
+
+  it("reads the outermost tool, so what it holds and its settings name it", () => {
+    expect(toolInPath("/c/1/i/2/projects/3/tasks/5")).toEqual({ tool: Tool.project, id: 3 });
+    expect(toolInPath("/c/1/i/2/wikis/4/files/8")).toEqual({ tool: Tool.wiki, id: 4 });
+    expect(toolInPath("/c/1/i/2/queues/6/settings/access")).toEqual({ tool: Tool.queue, id: 6 });
+  });
+
+  it("is null anywhere that is no tool's page", () => {
+    expect(toolInPath("/c/1/i/2/projects")).toBeNull();
+    expect(toolInPath("/c/1/i/2/dashboards/gallery")).toBeNull();
+    expect(toolInPath("/c/1/settings/users")).toBeNull();
+    expect(toolInPath("/c/1/go/file/42")).toBeNull();
   });
 });

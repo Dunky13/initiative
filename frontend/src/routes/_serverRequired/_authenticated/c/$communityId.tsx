@@ -12,6 +12,7 @@ import { StatusMessage } from "@/components/StatusMessage";
 import { CommunityHomeSkeleton, PageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { HelpLink } from "@/components/support/HelpLink";
 import { useCommunities } from "@/hooks/useCommunities";
+import { useToolPageTitle } from "@/hooks/useToolPageTitle";
 
 export const Route = createFileRoute("/_serverRequired/_authenticated/c/$communityId")({
   beforeLoad: async ({ context, params, cause }) => {
@@ -67,6 +68,13 @@ export const Route = createFileRoute("/_serverRequired/_authenticated/c/$communi
 /** The community subtree's waiting state — shown while the community list is still
  *  arriving, and while this tab is catching up to the URL's community. The front
  *  page gets its own outline; anything deeper gets a page's. */
+/** Names the browser tab after the tool the route is in. A component of its
+ *  own so it asks only once this tab has adopted the URL's community. */
+function ToolPageTitle() {
+  useToolPageTitle();
+  return null;
+}
+
 function CommunityLoading({ communityId }: { communityId: number }) {
   const { pathname } = useLocation();
   const atHome = pathname === `/c/${communityId}` || pathname === `/c/${communityId}/`;
@@ -151,6 +159,7 @@ export function CommunityLayout() {
 
   return (
     <>
+      <ToolPageTitle />
       {notice}
       <Outlet />
     </>

@@ -50,6 +50,7 @@ history/
 - `cd frontend && pnpm install && pnpm dev` — launch the Vite dev server (uses `VITE_API_URL`, defaults to `http://localhost:8000/api/v1`).
 - `cd frontend && pnpm build:editor-server` — build the document editor the backend runs (`frontend/dist-editor/editor.js`, read by `app/services/editor_engine.py`). The image and CI build it; locally, the backend tests that use it fail until it is built.
 - **Dev ports are per checkout.** The main working tree keeps `8000`/`5173`; each linked worktree is allocated the lowest free offset (`8001`/`5174`, `8002`/`5175`, …), so several agents can run a dev environment at once. `scripts/dev-ports.sh` is the single source of truth — every dev script sources it, and it exports `DEV_BACKEND_PORT`, `DEV_FRONTEND_PORT`, `VITE_API_URL`, `VITE_DEV_PROXY_TARGET` and per-checkout log paths. Offsets live in `~/.cache/initiative/dev-ports`, keyed by checkout path: a checkout keeps its ports for as long as it exists, and a deleted one's slot is reused. There is no derived fallback — if the registry can't be read or written the dev scripts stop and say so, because a guessed pair could already be another checkout's. Pin a checkout by setting `DEV_BACKEND_PORT`/`DEV_FRONTEND_PORT` yourself. The VSCode "Dev Environment" debug config works in any worktree: launch.json cannot run a shell, so it starts `backend/scripts/dev_api.py`, which asks `dev-ports.sh` for the port and runs uvicorn in-process. Starting a dev environment on a port something else already holds reports it and stops, rather than taking the port.
+- `.mcp.json` gives agents a `browser` MCP server: `@playwright/mcp`, pinned in `frontend` devDependencies to the release built on the same Playwright minor as `@playwright/test`, running headless on the Chromium `pnpm exec playwright install chromium` downloads (no Google Chrome needed). `frontend/src/__tests__/playwrightMcp.test.ts` fails when the two drift apart; bump them together.
 - `docker-compose up --build` — start Postgres 17 and the app image (API and SPA from one uvicorn).
 - `cd backend && pytest` / `ruff check app` and `cd frontend && pnpm lint` — run tests and linters. Tests are co-located alongside source files in `app/` (not in a separate `tests/` directory).
 - `scripts/ci/check` — the fast checks CI runs (ruff, ruff format, ty, frozen migrations and one Alembic head, biome, tsc, and generated-types / `env-contract.json` drift), for what the branch changed against `origin/dev`. CI calls the same script for those steps, and the husky pre-push hook runs it (`git push --no-verify` skips it once). No tests and no database. `scripts/ci/check all` runs everything; `scripts/ci/check codegen` regenerates drifted files for you to review and commit.
@@ -197,6 +198,32 @@ git log --oneline --grep="bump version" -n 1
 - ✅ Keep entries concise and user-focused
 - ❌ Do NOT add changelog entries for minor refactoring or internal changes
 - ❌ Do NOT put new changes under an already-released version number
+
+#### Screenshots
+
+A change people will want to see can carry a picture, shown under its bullet
+in the version dialog and on **What's new**, in light or dark to match the app.
+
+1. Add a shot in `frontend/e2e/shots/<name>.shot.ts`: walk to the screen, then
+   `await shoot(page, "<name>")` (or `shoot(page, "<name>", locator)` for one
+   part of it). `gantt.shot.ts` is the example; `barovia.ts` walks to the
+   seed's best-filled project.
+2. With the dev environment running on its seed data, run
+   `cd frontend && pnpm screenshots` (or `pnpm screenshots e2e/shots/<name>.shot.ts`).
+   It signs in as `admin1@example.com` and writes
+   `docs/images/releases/<name>.webp` and `<name>.dark.webp`.
+3. Look them over, then put the picture under its bullet, by its repository path
+   so GitHub draws it too:
+   `![What it shows](docs/images/releases/<name>.webp)`.
+   Several pictures on consecutive lines under one bullet become a strip that
+   scrolls sideways, each opening in the lightbox.
+
+The pictures live with the help center, so GitHub Pages publishes them when the
+release reaches `main` and the app loads them from there
+(`frontend/src/lib/releaseImages.ts`); no install or app update carries them.
+Name a picture for what it shows, not the release; a name already used would
+replace a released picture. `releaseImages.test.ts` fails when a picture the
+changelog names is missing either theme or its alt text.
 
 ### Announcements
 
@@ -492,6 +519,9 @@ cd frontend && pnpm test:run
 # The browser journeys (frontend/e2e/*.journey.ts) against a fresh install:
 # start docker-compose.example.yml with the image to check, then
 cd frontend && pnpm exec playwright install chromium && JOURNEYS_URL=http://localhost:8173 pnpm test:journeys
+
+# The release screenshots (frontend/e2e/shots), of the running dev environment
+cd frontend && pnpm screenshots
 
 # Run frontend tests in watch mode
 cd frontend && pnpm test
