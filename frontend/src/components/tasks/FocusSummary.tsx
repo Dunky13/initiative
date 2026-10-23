@@ -89,7 +89,7 @@ const FocusRow = ({
           to={taskHref(task, activeCommunityId)}
           className={cn(
             "block truncate font-medium text-sm hover:underline",
-            done && "text-muted-foreground line-through"
+            done && "text-muted-foreground"
           )}
         >
           {task.title}

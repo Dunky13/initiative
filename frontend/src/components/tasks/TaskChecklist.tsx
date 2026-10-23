@@ -502,7 +502,7 @@ const ChecklistItemRow = ({
             onKeyDown={onKeyDown}
             disabled={!canEdit}
             rows={1}
-            className={`max-h-48 min-h-0 resize-none ${item.done ? "line-through" : ""}`}
+            className="max-h-48 min-h-0 resize-none"
           />
         ) : (
           <Input
@@ -513,7 +513,6 @@ const ChecklistItemRow = ({
             onBlur={onTextBlur}
             onKeyDown={onKeyDown}
             disabled={!canEdit}
-            className={item.done ? "line-through" : undefined}
           />
         )}
         {clipped || expanded ? (

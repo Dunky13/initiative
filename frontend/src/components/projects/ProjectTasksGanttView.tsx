@@ -1021,8 +1021,7 @@ export const ProjectTasksGanttView = ({
                         tabIndex={-1}
                         className={cn(
                           "min-w-0 truncate hover:underline",
-                          row.task.task_status.category === "done" &&
-                            "text-muted-foreground line-through"
+                          row.task.task_status.category === "done" && "text-muted-foreground"
                         )}
                       >
                         {row.task.title}
@@ -1340,10 +1339,7 @@ const OutsideRow = ({
           <Link
             to={href}
             tabIndex={-1}
-            className={cn(
-              "min-w-0 truncate hover:underline",
-              task.done && "text-muted-foreground line-through"
-            )}
+            className={cn("min-w-0 truncate hover:underline", task.done && "text-muted-foreground")}
           >
             {task.title}
           </Link>
