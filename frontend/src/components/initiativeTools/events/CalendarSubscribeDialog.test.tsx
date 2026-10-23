@@ -4,7 +4,7 @@
  * A page with several calendars offers a link for each, so each stays its own
  * calendar in the other app.
  */
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, vi } from "vitest";
@@ -133,6 +133,35 @@ describe("NewSubscriptionLinkDialog", () => {
       await screen.findByText(/\/api\/v1\/c\/1\/calendars\/7\/feed\.ics\?token=ppk_fresh$/)
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+
+  it("stays open while the new link is made, as the old one is already gone", async () => {
+    let answer: () => void = () => {};
+    server.use(
+      http.post(
+        "/api/v1/me/api-keys",
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = () =>
+              resolve(
+                HttpResponse.json({ api_key: key({ id: 2 }), secret: "ppk_late" }, { status: 201 })
+              );
+          })
+      )
+    );
+    const onClose = vi.fn();
+    const subscription = key();
+    if (!isSubscription(subscription)) throw new Error("a calendar's key is a subscription");
+    renderWithProviders(<NewSubscriptionLinkDialog apiKey={subscription} onClose={onClose} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Get a new link" }));
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    await waitFor(() => expect(cancel).toBeDisabled());
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+
+    answer();
+    expect(await screen.findByText(/token=ppk_late$/)).toBeInTheDocument();
   });
 
   it("is offered only for a calendar's key", () => {

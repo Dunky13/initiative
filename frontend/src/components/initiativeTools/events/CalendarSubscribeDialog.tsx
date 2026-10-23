@@ -202,8 +202,13 @@ export const NewSubscriptionLinkDialog = ({
 }) => {
   const { t } = useTranslation(["calendars", "common"]);
   const { link, create, isPending } = useSubscriptionLink(apiKey.community_id, apiKey.resource_id);
+  // Once asked for, the old link is replaced whatever happens here, so the
+  // dialog stays until the new one is shown.
+  const close = () => {
+    if (!isPending) onClose();
+  };
   return (
-    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+    <Dialog open onOpenChange={(open) => (open ? undefined : close())}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("subscribe.newLinkTitle", { name: apiKey.name })}</DialogTitle>
@@ -223,7 +228,7 @@ export const NewSubscriptionLinkDialog = ({
             </Button>
           ) : (
             <>
-              <Button type="button" variant="outline" onClick={onClose}>
+              <Button type="button" variant="outline" disabled={isPending} onClick={close}>
                 {t("common:cancel")}
               </Button>
               <Button type="button" disabled={isPending} onClick={() => create(apiKey.name)}>
