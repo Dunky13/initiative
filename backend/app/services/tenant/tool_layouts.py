@@ -26,7 +26,6 @@ from app.core.errors import CodedError
 from app.core.messages import TaskTypeMessages, ToolLayoutMessages
 from app.core.tools import (
     DETAIL_LAYOUTS,
-    HIDDEN_LISTS,
     LAYOUT_DEFAULT,
     LIST_LAYOUTS,
     TYPED_DETAILS,
@@ -195,12 +194,12 @@ async def item_types_by_instance(
 
 def shown_lists(tool: Tool, stored: Mapping[str, dict[str, Any]]) -> tuple[str, ...]:
     """The lists a target shows, in order, from the definitions it stores by
-    kind: each that its own definition, or else its tool, does not hide."""
-    shipped_hidden = HIDDEN_LISTS.get(tool, ())
+    kind: each that its own definition does not hide. As shipped, every list
+    shows."""
     return tuple(
         kind
         for kind in LIST_LAYOUTS.get(tool, ())
-        if not stored.get(kind, {}).get("hidden", kind in shipped_hidden)
+        if not stored.get(kind, {}).get("hidden", False)
     )
 
 

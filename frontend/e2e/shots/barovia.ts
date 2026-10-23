@@ -12,27 +12,9 @@ export async function openBarovia(page: Page) {
   await expect(page.getByRole("heading", { name: "Barovia Arc", level: 1 })).toBeVisible();
 }
 
-/** Switch the project's tasks to `layout`, grouped by `groupBy`. A new
- *  project shows its board alone, so the Gantt is first shown in its layout
- *  menu through Edit layouts, as a person would. */
+/** Switch the project's tasks to `layout`, grouped by `groupBy`. */
 export async function showTasks(page: Page, layout: "Board" | "Gantt", groupBy = "None") {
   const menu = page.getByRole("combobox", { name: "Layout" });
-  await menu.click();
-  const shown = await page.getByRole("option", { name: layout }).count();
-  await page.keyboard.press("Escape");
-  if (!shown) {
-    await page.getByRole("link", { name: "Settings", exact: true }).click();
-    await page.getByRole("tab", { name: "Layouts" }).click();
-    await page.getByRole("link", { name: "Edit layouts" }).click();
-    const editor = page.getByRole("dialog", { name: "Edit layouts" });
-    await editor.getByRole("combobox", { name: "Layout being edited" }).click();
-    await page.getByRole("option", { name: new RegExp(`^${layout}`) }).click();
-    await editor.getByRole("switch", { name: "Shown in the layout menu" }).check();
-    await editor.getByRole("button", { name: "Save" }).click();
-    await expect(editor.getByRole("button", { name: "Save" })).toBeDisabled();
-    await editor.getByRole("button", { name: "Close the editor" }).click();
-    await openBarovia(page);
-  }
   await menu.click();
   await page.getByRole("option", { name: layout }).click();
   await page.getByRole("combobox", { name: "Group by" }).click();

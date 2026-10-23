@@ -36,6 +36,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Toggle } from "@/components/ui/toggle";
@@ -856,15 +857,31 @@ export const ProjectTasksGanttView = ({
               <DropdownMenuContent align="start">
                 {menu?.kind === "drop" ? (
                   <>
+                    <DropdownMenuLabel className="max-w-xs font-normal text-muted-foreground">
+                      {t("tasks.ganttLinkQuestion", {
+                        task: menu.to.title,
+                        other: menu.from.title,
+                      })}
+                    </DropdownMenuLabel>
                     <DropdownMenuItem
                       onSelect={() => link(menu.to, RelationshipType.depends_on, menu.from)}
                     >
-                      {t("tasks.ganttWaitsOn", { task: menu.to.title, other: menu.from.title })}
+                      <span className="flex flex-col">
+                        <span>{t("tasks.ganttBlockedBy")}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {t("tasks.ganttBlockedByHint")}
+                        </span>
+                      </span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => link(menu.to, RelationshipType.part_of, menu.from)}
                     >
-                      {t("tasks.ganttPartOf", { task: menu.to.title, other: menu.from.title })}
+                      <span className="flex flex-col">
+                        <span>{t("tasks.ganttPartOf")}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {t("tasks.ganttPartOfHint")}
+                        </span>
+                      </span>
                     </DropdownMenuItem>
                   </>
                 ) : null}
@@ -1253,9 +1270,11 @@ const TaskTrack = ({
         </div>
       ) : null}
       {span && canMove && !dragging ? (
-        // Drawn from here to another task's row, that task waits on this one.
+        // Drawn from here to another task's row, it asks how the two are linked.
+        // Above the arrows' hit lines, which leave the bar's end right here,
+        // so a task with links can still start another.
         <span
-          className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 cursor-crosshair touch-none rounded-full border-2 border-primary bg-background opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100"
+          className="absolute top-1/2 z-[6] h-2.5 w-2.5 -translate-y-1/2 cursor-crosshair touch-none rounded-full border-2 border-primary bg-background opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100"
           style={{ left: x(span.end) + 3 }}
           title={linkHint}
           data-testid="gantt-link"

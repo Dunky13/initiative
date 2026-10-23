@@ -19,7 +19,7 @@ const mount = (target = true) =>
   renderPage(
     () => (
       <LayoutList
-        layouts={buildToolLayoutSet().layouts}
+        layouts={buildToolLayoutSet({ hidden: ["table", "gantt", "calendar"] }).layouts}
         target={target ? instanceTarget(Tool.project, 1) : undefined}
       />
     ),
