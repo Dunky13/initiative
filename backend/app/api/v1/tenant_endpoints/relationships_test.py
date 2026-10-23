@@ -1151,6 +1151,10 @@ async def test_a_projects_task_edges_are_read_at_once(
     first, second, part = [await create_task(session, a.project) for _ in range(3)]
     other_project = await create_project(session, a.initiative, a.user, name="Other")
     elsewhere = await create_task(session, other_project, title="Elsewhere")
+    # Shared with the initiative, where the reader is; the closed initiative's
+    # project is not, whatever its sharing says.
+    for project in (a.project, other_project):
+        await create_resource_grant(session, project, all_initiative_members=True)
     closed = await create_initiative(session, a.guild, a.user, name="Closed")
     unseen = await create_task(
         session, await create_project(session, closed, a.user, name="Unseen")

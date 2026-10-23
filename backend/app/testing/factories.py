@@ -17,6 +17,7 @@ the fail-closed flush router in ``schema_harness``.
 """
 
 import base64
+import functools
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -114,6 +115,17 @@ from app.services.tenant.names import slugify
 from app.testing.schema_harness import guild_of, route_session_to_guild
 
 
+@functools.cache
+def _default_password_hash() -> str:
+    """The hash of ``testpassword123``, worked out once per process.
+
+    argon2id is slow on purpose, and nearly every test makes accounts with this
+    password, so hashing it per account was a measurable share of the suite.
+    Every account sharing one hash still signs in with the password.
+    """
+    return get_password_hash("testpassword123")
+
+
 async def create_user(
     session: AsyncSession,
     commit: bool = True,
@@ -157,7 +169,7 @@ async def create_user(
         # not about the age gate should never meet it. The gate's own tests
         # pass ``age_confirmed_at=None`` to get an account that has not.
         "age_confirmed_at": datetime.now(timezone.utc),
-        "hashed_password": get_password_hash("testpassword123"),
+        "hashed_password": _default_password_hash(),
         "role": UserRole.member,
         "status": UserStatus.active,
         "week_starts_on": 0,
