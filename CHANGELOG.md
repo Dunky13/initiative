@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Saving a layout again.** **Edit layouts** saves changes to a table, Gantt or calendar layout that was saved before (#2911).
+
 ## [0.77.0] - 2026-10-23
 
 ### Added
