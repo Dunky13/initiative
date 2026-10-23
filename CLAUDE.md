@@ -416,7 +416,7 @@ therefore also runs with `fsync=off`, `full_page_writes=off`,
 `max_wal_size=512MB` — safe for a cluster holding only the dev database and
 throwaway test databases, and not something to copy into any deployment.
 CI's test cluster turns off the first three as well (`.github/actions/test-database`):
-with them on, a full run spent most of its hour waiting on the runner's disk.
+with them on, every checkpoint of a full run synced hundreds of thousands of files.
 
 **Which backend tests a pull request runs.** CI picks one of two modes in its
 Detect Changes job, and the run's summary page says which:
