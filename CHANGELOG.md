@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   ![A project's Gantt view: tasks as bars across six weeks, a milestone at the end, and arrows from each task to what it waits on](docs/images/releases/gantt.webp)
 
-- **Type a task's details into its title.** "Send the invoice every third tuesday at 3pm !high #billing @sam" sets the repeat, time, priority, tag and assignee, and `@` opens a member search. Switch it off with **Read details from the title** in **Preferences**.
+- **Type a task's details into its title.** "Send the invoice every third tuesday at 3pm !high #billing @sam" sets the repeat, time, priority, tag and assignee; `every!` counts the repeat from when you finish, and `@` opens a member search. Switch it off with **Read details from the title** in **Preferences**.
 
   ![Create task with "Restock the healing potions every third tuesday at 3pm !high #quest" and a person in its title, each part highlighted and listed underneath, and the priority, assignee and due date filled in](docs/images/releases/title-details.webp)
 

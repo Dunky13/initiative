@@ -59,3 +59,14 @@ def test_an_hourly_title_repeat_is_counted_from_completion():
             validate_task_recurrence(
                 rule=case["rrule"], strategy="fixed", limit=None, due=_DUE
             )
+
+
+def test_an_interval_from_completion_runs_from_the_day_it_was_done():
+    """ "every! 2 weeks" is two weeks after each one is finished, whatever
+    weekday that was: the rule carries no day of its own to fall back to."""
+    (case,) = [case for case in _CASES if case["text"] == "Mow the lawn every! 2 weeks"]
+    assert case["strategy"] == "rolling"
+    finished = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)  # a Monday
+    assert recurrence.next_start(case["rrule"], finished, 0, count=False) == datetime(
+        2026, 11, 9, 17, 0, tzinfo=timezone.utc
+    )

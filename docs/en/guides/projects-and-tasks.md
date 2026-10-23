@@ -68,7 +68,7 @@ A new task's title fills in the rest as you type. "Email the caretaker about the
 | `at 3pm`, `9:30am`, `17:00`, `noon` | The time it's due. A time with no date is today's, or tomorrow's if today's has already gone. |
 | `every day`, `every other week`, `every 3 months`, `every mon, wed and fri`, `every weekday`, `every weekend` | A repeat, starting on the next day it falls on. |
 | `every third tuesday`, `the last friday of every month`, `every 1st and 15th`, `every last day of the month`, `every last weekday of the month`, `every oct 30` | A repeat by its place in the month or the year. |
-| `every 4 hours` | A repeat counted from when you finish each one, so the next is due four hours after you tick it off. |
+| `every! 6 weeks`, `ev! month`, `every 4 hours` | A repeat counted from when you finish each one, so the haircut is due six weeks after the last haircut, not six weeks after you first wrote it down. `ev` is short for `every`. Hourly repeats always count this way. |
 | `until dec 18`, `10 times`, after any of the above | When the repeat stops. |
 | `!urgent`, `!high`, `!medium`, `!low`, or `!1` (urgent) to `!4` (low) | The priority. |
 | `#name` | A tag the community already has. `#bug-fix` finds "Bug fix". |

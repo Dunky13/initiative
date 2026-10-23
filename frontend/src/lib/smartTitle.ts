@@ -48,7 +48,8 @@ export interface TitleWords {
   nextAfter: string[];
   /** Before a count of units: "in 3 days". */
   in: string[];
-  /** Before a repeat: "every week". */
+  /** Before a repeat: "every week". Followed by `!` ("every!"), the repeat is
+   *  counted from when each one is done. */
   every: string[];
   /** Every second one: "every other week". */
   other: string[];
@@ -280,6 +281,8 @@ interface Word {
   end: number;
   /** As compared. */
   core: string;
+  /** Followed straight away by `!`: "every!" repeats from when each is done. */
+  bang: boolean;
 }
 
 const TRAILING = /[.,;:!?)\]]+$/;
@@ -294,6 +297,7 @@ const wordsOf = (text: string): Word[] =>
       start: match.index + lead,
       end: match.index + trimmed.length,
       core: normalizeWord(trimmed.slice(lead)),
+      bang: raw.slice(trimmed.length).startsWith("!"),
     };
   });
 
@@ -580,6 +584,10 @@ interface Repeat {
   rule: (start: Date) => RecurrenceRule;
   /** Counted from when each one is done: an hourly repeat is never on schedule. */
   rolling: boolean;
+  /** A plain interval ("2 weeks") as it is counted from completion: the unit
+   *  alone, with no day taken from the start, so the gap runs from the day it
+   *  was done rather than to the start's weekday. */
+  counted?: RecurrenceRule;
 }
 
 /** The server's bounds on a repeat's interval and count. */
@@ -751,6 +759,13 @@ const yearly = ([month, day]: [number, number], interval: number): Repeat => ({
   rolling: false,
 });
 
+const FREQUENCY_OF: Record<Unit, RecurrenceRule["frequency"]> = {
+  day: "daily",
+  week: "weekly",
+  month: "monthly",
+  year: "yearly",
+};
+
 const PRESET_OF: Record<Unit, "daily" | "weekly" | "monthly" | "yearly"> = {
   day: "daily",
   week: "weekly",
@@ -849,6 +864,7 @@ const everyAt = (
         return { ...rule, interval };
       },
       rolling: false,
+      counted: { ...blank(), frequency: FREQUENCY_OF[unit[0]], interval },
     },
     length: unit[1],
   };
@@ -895,7 +911,15 @@ const repeatAt = (
     const said = everyAt(words, all, next, interval);
     if (said) {
       const length = next - at + said.length;
-      found = { value: said.value, length: length + monthPhrase(words, all, at + length, true) };
+      // "every! 2 weeks": two weeks from when each one is done.
+      const afterDone = all[at + every - 1].bang;
+      const counted = said.value.counted;
+      found = {
+        value: !afterDone
+          ? said.value
+          : { rule: counted ? () => counted : said.value.rule, rolling: true },
+        length: length + monthPhrase(words, all, at + length, true),
+      };
     }
   } else {
     // "the last friday of every month", "on the 1st and 15th of each month"

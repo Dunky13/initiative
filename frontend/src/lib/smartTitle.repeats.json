@@ -263,6 +263,76 @@
       "title": "Sport",
       "rrule": "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TH",
       "strategy": "fixed"
+    },
+    {
+      "locale": "en",
+      "text": "Water the plants ev week",
+      "title": "Water the plants",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=TH",
+      "strategy": "fixed"
+    },
+    {
+      "locale": "en",
+      "text": "Mow the lawn every! 2 weeks",
+      "title": "Mow the lawn",
+      "rrule": "RRULE:FREQ=WEEKLY;INTERVAL=2",
+      "strategy": "rolling"
+    },
+    {
+      "locale": "en",
+      "text": "Haircut ev! 6 weeks",
+      "title": "Haircut",
+      "rrule": "RRULE:FREQ=WEEKLY;INTERVAL=6",
+      "strategy": "rolling"
+    },
+    {
+      "locale": "en",
+      "text": "Call home every! sunday at 6pm",
+      "title": "Call home",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=SU",
+      "strategy": "rolling"
+    },
+    {
+      "locale": "en",
+      "text": "Review the budget ev! third tuesday",
+      "title": "Review the budget",
+      "rrule": "RRULE:FREQ=MONTHLY;BYDAY=3TU",
+      "strategy": "rolling"
+    },
+    {
+      "locale": "en",
+      "text": "Descale the kettle ev! month",
+      "title": "Descale the kettle",
+      "rrule": "RRULE:FREQ=MONTHLY",
+      "strategy": "rolling"
+    },
+    {
+      "locale": "en",
+      "text": "Renew the passport every! 10 years",
+      "title": "Renew the passport",
+      "rrule": "RRULE:FREQ=YEARLY;INTERVAL=10",
+      "strategy": "rolling"
+    },
+    {
+      "locale": "en",
+      "text": "Charge the EV every week",
+      "title": "Charge the EV",
+      "rrule": "RRULE:FREQ=WEEKLY;BYDAY=TH",
+      "strategy": "fixed"
+    },
+    {
+      "locale": "en",
+      "text": "Fix the EV charger",
+      "title": "Fix the EV charger",
+      "rrule": null,
+      "strategy": null
+    },
+    {
+      "locale": "fr",
+      "text": "Arroser chaque! semaine",
+      "title": "Arroser",
+      "rrule": "RRULE:FREQ=WEEKLY",
+      "strategy": "rolling"
     }
   ]
 }
