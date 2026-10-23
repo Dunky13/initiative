@@ -83,6 +83,9 @@ ALLOWED_DYNAMIC_SQL: dict[str, str] = {
     "app/testing/guild_pool.py::activate": (
         "test harness: int-derived guild_<id> / test_pool_<id> schema names"
     ),
+    "app/testing/guild_pool.py::install": (
+        "test harness: int-derived test_pool_<id> schema name"
+    ),
     "app/testing/guild_pool.py::drop": (
         "test harness: int-derived test_pool_<id> schema name"
     ),

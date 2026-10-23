@@ -192,7 +192,9 @@ async def install(engine: AsyncEngine) -> None:
                 {"r": roles},
             )
             if present != len(roles):
-                await conn.exec_driver_sql(f'DROP SCHEMA "{schema}" CASCADE')
+                await conn.exec_driver_sql(
+                    f'DROP SCHEMA "{parked_name(guild_id)}" CASCADE'
+                )
                 await drop_guild_schema(conn, guild_id)
                 continue
             await _record_permissions(conn, schema, guild_id)
