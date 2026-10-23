@@ -244,6 +244,18 @@ describe("readTitle — repeats", () => {
   });
 });
 
+describe("readTitle — repeats counted from completion", () => {
+  it("starts an hourly repeat its interval from now", () => {
+    expect(due("Meds every 4 hours")).toBe("2026-10-22 14:00");
+  });
+
+  it("starts any other on the first day it falls on, not hours from now", () => {
+    expect(due("Mow the lawn every! 2 weeks")).toBe("2026-10-22 23:59");
+    expect(due("Call home every! sunday")).toBe("2026-10-25 23:59");
+    expect(read("Call home every! sunday").dueHasTime).toBe(false);
+  });
+});
+
 describe("readTitle — what stays", () => {
   it("reads it all at once", () => {
     const reading = read("Send the invoice friday at 3pm !high #billing @sam");

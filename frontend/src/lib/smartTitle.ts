@@ -1222,9 +1222,11 @@ export const readTitle = (text: string, context: TitleContext): TitleReading => 
   const title = without(text, parts);
   if (!title) return asTyped(text);
 
-  if (repeat?.rolling && date === null && time === null) {
-    // An hourly repeat with no date starts its first count now.
-    const first = addHours(context.now, repeat.rule(today).interval);
+  const hourly = repeat?.rule(today);
+  if (hourly?.frequency === "hourly" && date === null && time === null) {
+    // An hourly repeat with no date starts its first count now. Any other
+    // repeat, counted from completion or not, starts on the first day it falls on.
+    const first = addHours(context.now, hourly.interval);
     date = startOfDay(first);
     time = { hours: first.getHours(), minutes: first.getMinutes() };
   }

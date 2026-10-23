@@ -51,8 +51,9 @@ const assignee = (person: TitlePerson): TaskAssigneeSummary => ({
 /**
  * The edit that takes a task being added from what its title last set to
  * what it sets now, or null when nothing moved. Only a field the reading
- * changed is touched, so one picked by hand since stays as picked; the tags
- * and people picked by hand stay beside the ones the title names.
+ * changed is touched, and only while it still holds what the title last set
+ * there: one picked by hand since stays as picked, even once its words go.
+ * The tags and people picked by hand stay beside the ones the title names.
  */
 export const readingEdit = (
   task: TaskRead,
@@ -71,16 +72,18 @@ export const readingEdit = (
   const due = reading.due?.toISOString() ?? null;
   if (due !== applied.due) {
     if (applied.due === null) next.before.due_date = task.due_date;
-    const value = due ?? next.before.due_date;
-    patch.due_date = value;
-    shows.due_date = value;
+    if (applied.due === null || task.due_date === applied.due) {
+      const value = due ?? next.before.due_date;
+      patch.due_date = value;
+      shows.due_date = value;
+    }
     next.due = due;
   }
 
   if (reading.priority !== applied.priority) {
     if (applied.priority === null) next.before.priority = task.priority;
     const value = reading.priority ?? next.before.priority;
-    if (value) {
+    if (value && (applied.priority === null || task.priority === applied.priority)) {
       patch.priority = value;
       shows.priority = value;
     }
@@ -130,9 +133,9 @@ export const readingEdit = (
     next.people = people;
   }
 
-  return Object.keys(patch).length
-    ? { edit: { patch, shows }, applied: next }
-    : { edit: null, applied };
+  // What the title says now is kept even where nothing moved, so its next
+  // change is measured from it.
+  return { edit: Object.keys(patch).length ? { patch, shows } : null, applied: next };
 };
 
 /** The fields a read title adds to a task made in one step, beside the people

@@ -80,6 +80,23 @@ describe("readingEdit", () => {
     expect(edit?.patch).toEqual({ due_date: null, priority: "low" });
   });
 
+  it("keeps a field picked by hand once the title's words for it go", () => {
+    const task = blank({ priority: "low" });
+    const first = readingEdit(task, reading({ due: DUE, priority: "high" }), NOTHING_APPLIED);
+    // Both changed by hand since the title set them.
+    const picked = blank({ priority: "urgent", due_date: "2026-12-01T00:00:00.000Z" });
+    const { edit } = readingEdit(picked, reading(), first.applied);
+    expect(edit).toBeNull();
+  });
+
+  it("does not set over a field picked by hand when the title says something new", () => {
+    const first = readingEdit(blank(), reading({ priority: "high" }), NOTHING_APPLIED);
+    const picked = blank({ priority: "urgent" });
+    const { edit, applied } = readingEdit(picked, reading({ priority: "low" }), first.applied);
+    expect(edit).toBeNull();
+    expect(applied.priority).toBe("low");
+  });
+
   it("leaves a field alone that the reading did not change", () => {
     const first = readingEdit(blank(), reading({ due: DUE }), NOTHING_APPLIED);
     // The due date was picked by hand since; the title typed on.

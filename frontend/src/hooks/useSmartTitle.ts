@@ -51,6 +51,8 @@ export interface SmartTitle {
   keep: (keys: string[]) => void;
   /** Somebody picked from the list under `@`, who their handle now names. */
   picked: (person: TitlePerson) => void;
+  /** Starts over for the next task: nothing kept, nobody picked. */
+  reset: () => void;
 }
 
 /**
@@ -103,7 +105,12 @@ export const useSmartTitle = ({
   const people = useMemo(() => {
     // Somebody picked from the list is who their name means, beside anybody
     // else who goes by it.
-    const others = (found.flatMap((query) => query.data?.items ?? []) as TitlePerson[]).filter(
+    // One person found by two handles' searches is still one person.
+    const byId = new Map<number, TitlePerson>();
+    for (const person of found.flatMap((query) => query.data?.items ?? []) as TitlePerson[]) {
+      byId.set(person.id, person);
+    }
+    const others = [...byId.values()].filter(
       (person) => !chosen.some((each) => each.username === person.username && each.id !== person.id)
     );
     return [...chosen, ...others.filter((person) => !chosen.some((c) => c.id === person.id))];
@@ -152,5 +159,9 @@ export const useSmartTitle = ({
       ]),
     []
   );
-  return { reading, read, keep, picked };
+  const reset = useCallback(() => {
+    setKept(new Set());
+    setChosen([]);
+  }, []);
+  return { reading, read, keep, picked, reset };
 };

@@ -69,6 +69,7 @@ export const QuickAddTask = ({ list, name }: { list: HomeTaskList; name: string 
           {
             onSuccess: () => {
               setTitle("");
+              smart.reset();
               toast.success(t("widgets.tasks.added", { list: name }));
             },
           }

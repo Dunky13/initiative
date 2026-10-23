@@ -113,4 +113,55 @@ describe("QuickAddTask", () => {
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({ title: "Water the plants", assignee_ids: [7, 42] });
   });
+
+  it("starts the next task afresh, with nothing kept from the last", async () => {
+    const sent = stubAdd();
+    renderBox(true);
+    const box = screen.getByRole("textbox");
+    await userEvent.type(box, "Plan the trip next week");
+    await userEvent.click(
+      await screen.findByRole("button", { name: /keep “next week” in the title/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: /^add$/i }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    await waitFor(() => expect(box).toHaveValue(""));
+
+    await userEvent.type(box, "Send the invoices next week");
+    await screen.findByRole("list", { name: /read from the title/i });
+    await userEvent.click(screen.getByRole("button", { name: /^add$/i }));
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1].title).toBe("Send the invoices");
+    expect(typeof sent[1].due_date).toBe("string");
+  });
+
+  it("assigns everybody named, when one is found by more than one handle", async () => {
+    const sent = stubAdd();
+    const sam = buildUserSummary({ id: 42, username: "sam" });
+    const samJones = buildUserSummary({ id: 43, username: "sam.jones" });
+    server.use(
+      communityHttp.get("/users/search", ({ request }) => {
+        const search = new URL(request.url).searchParams.get("search");
+        // Searching "sam" finds sam.jones too.
+        const items = search === "sam" ? [sam, samJones] : [samJones];
+        return HttpResponse.json({
+          items,
+          total_count: items.length,
+          page: 1,
+          page_size: 20,
+          has_next: false,
+          has_prev: false,
+        });
+      })
+    );
+    renderBox(true);
+    await userEvent.type(screen.getByRole("textbox"), "Review the draft @sam @sam.jones");
+    // Typing "@" opens the list; the reading still waits for both lookups.
+    await userEvent.keyboard("{Escape}");
+    const read = await screen.findByRole("list", { name: /read from the title/i });
+    await waitFor(() => expect(read.querySelectorAll("li")).toHaveLength(2));
+
+    await userEvent.click(screen.getByRole("button", { name: /^add$/i }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ title: "Review the draft", assignee_ids: [7, 42, 43] });
+  });
 });
