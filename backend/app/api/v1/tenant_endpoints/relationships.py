@@ -249,14 +249,19 @@ async def list_task_edges(
             EntityRelationship.removed_at.is_(None),  # type: ignore[union-attr]
         )
 
-    rows = (
-        await session.exec(
-            union(
-                arm(EntityRelationship.source_node),
-                arm(EntityRelationship.target_node),
+    # Oldest first: a task part of several is nested under the first, as
+    # ``task_hierarchy`` reads its parent.
+    rows = sorted(
+        (
+            await session.exec(
+                union(
+                    arm(EntityRelationship.source_node),
+                    arm(EntityRelationship.target_node),
+                )
             )
-        )
-    ).all()
+        ).all(),
+        key=lambda row: row[0],
+    )
     outside = {end for _, *ends, _ in rows for end in ends if end not in task_ids}
     others = (
         (

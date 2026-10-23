@@ -2,9 +2,9 @@
 
 The columns are not here. They are read off ``Task`` itself, because a foreign
 key already names the picker that fills it and a SQL type already says whether
-it orders. What is left is the part no table carries: the five fields that are a
-subquery rather than a column, and the two columns that exist for a feature's
-own bookkeeping.
+it orders. What is left is the part no table carries: the fields that are a
+subquery rather than a column, the parent a list groups by, and the columns that
+exist for a feature's own bookkeeping.
 """
 
 from __future__ import annotations
@@ -219,6 +219,12 @@ def _tag_name(ctx: SortContext) -> Any:
     return first_tag_name(TAG_LINKS["task"], Task.id)
 
 
+async def _parent_groups(session: Any, ids: list[int]) -> Any:
+    from app.services.tenant import task_hierarchy
+
+    return await task_hierarchy.groups(session, ids)
+
+
 def _computed() -> tuple[FieldSpec, ...]:
     return (
         FieldSpec(
@@ -239,6 +245,15 @@ def _computed() -> tuple[FieldSpec, ...]:
             sort=_status_position,
             filterable=False,
             sortable=True,
+        ),
+        # The task a task is part of. A grouping only: the tree is stored as
+        # ``part_of`` edges, which no column or declared relation reaches.
+        FieldSpec(
+            name="parent_task_id",
+            kind=ControlKind.task,
+            ops=frozenset(),
+            filterable=False,
+            groups=_parent_groups,
         ),
         FieldSpec(
             name="tag_name",

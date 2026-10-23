@@ -1531,6 +1531,14 @@ export interface ChecklistProgress {
 }
 
 /**
+ * The task a task is part of: the target of its ``part_of`` edge.
+ */
+export interface TaskParentSummary {
+  id: number;
+  title: string;
+}
+
+/**
  * One value an installed plug-in shows on an item: a key its pinned
  * version declares as a field there. A list field's value is an array of its
  * elements, newest first, each with its ``ref``.
@@ -1582,6 +1590,8 @@ export interface TaskListRead {
   initiative_name: string | null;
   initiative_color: string | null;
   checklist_progress: ChecklistProgress | null;
+  parent: TaskParentSummary | null;
+  subtask_progress: ChecklistProgress | null;
   tags: TagSummary[];
   properties: PropertySummary[];
   plugin_values: PluginValueSummary[];
@@ -10515,6 +10525,7 @@ export interface TaskCreate {
   /** @maxItems 100 */
   tag_ids?: number[];
   checklist?: ChecklistItemInput[];
+  parent_task_id?: number | null;
 }
 
 /**
@@ -10597,6 +10608,8 @@ export interface TaskRead {
   project: TaskProjectSummary | null;
   checklist: ChecklistItem[];
   checklist_progress: ChecklistProgress | null;
+  parent: TaskParentSummary | null;
+  subtask_progress: ChecklistProgress | null;
   tags: TagSummary[];
   properties: PropertySummary[];
   plugin_values: PluginValueSummary[];
@@ -10771,6 +10784,7 @@ export interface TaskUpdate {
   recurrence_limit?: number | null;
   tag_ids?: number[] | null;
   checklist?: ChecklistItemInput[] | null;
+  parent_task_id?: number | null;
   scope?: TaskUpdateScope;
 }
 

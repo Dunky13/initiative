@@ -1,7 +1,7 @@
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import Fuse from "fuse.js";
 import type { LucideIcon, LucideProps } from "lucide-react";
-import { DynamicIcon, dynamicIconImports, type IconName } from "lucide-react/dynamic";
+import { dynamicIconImports, type IconName } from "lucide-react/dynamic";
 import * as React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDebounceValue } from "usehooks-ts";
@@ -427,9 +427,33 @@ interface IconProps extends Omit<LucideProps, "ref"> {
   name: IconName;
 }
 
+/** The icons drawn so far, by name. An icon is loaded on first use; after
+ *  that it draws at once wherever it is mounted again, where lucide's own
+ *  dynamic icon draws nothing for a frame every time. */
+const loadedIcons = new Map<IconName, LucideIcon>();
+
+const isIconName = (name: string): name is IconName => Object.hasOwn(dynamicIconImports, name);
+
 const Icon = React.forwardRef<React.ComponentRef<LucideIcon>, IconProps>(
   ({ name, ...props }, ref) => {
-    return <DynamicIcon name={name} {...props} ref={ref} />;
+    const [, setLoaded] = useState(0);
+    const Loaded = loadedIcons.get(name);
+    useEffect(() => {
+      if (loadedIcons.has(name) || !isIconName(name)) return;
+      let live = true;
+      dynamicIconImports[name]()
+        .then((module) => {
+          loadedIcons.set(name, module.default);
+          if (live) setLoaded((count) => count + 1);
+        })
+        .catch((error: unknown) => console.error(error));
+      return () => {
+        live = false;
+      };
+    }, [name]);
+    // The room the icon takes while it loads, so nothing moves when it lands.
+    if (!Loaded) return <span className={cn("inline-block", props.className)} aria-hidden />;
+    return <Loaded {...props} ref={ref} />;
   }
 );
 Icon.displayName = "Icon";

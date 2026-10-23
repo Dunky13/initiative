@@ -398,7 +398,7 @@ class TestDeclaration:
 
     def test_every_field_declares_some_way_to_be_used(self):
         for spec in dataset("tasks").fields:
-            assert spec.filterable or spec.sortable
+            assert spec.filterable or spec.sortable or spec.groups is not None
 
     def test_a_field_cannot_claim_a_use_it_cannot_perform(self):
         for spec in dataset("tasks").fields:

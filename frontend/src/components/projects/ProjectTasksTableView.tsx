@@ -11,7 +11,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { ChevronRight, GripVertical } from "lucide-react";
 import type React from "react";
 import { createContext, memo, useCallback, useContext, useMemo } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -40,16 +40,11 @@ import { useMoveTaskToGroup } from "@/hooks/useTasks";
 import { fieldColumnId } from "@/lib/layouts/columns";
 import { columnsOf } from "@/lib/layouts/draft";
 import { useProjectLayoutEnv } from "@/lib/layouts/fields";
-import {
-  groupRowId,
-  groupRows,
-  NO_GROUP,
-  type TaskGroupRow,
-  uniqueTasksFromRows,
-} from "@/lib/layouts/grouping";
+import { groupRowId, groupRows, NO_GROUP, uniqueTasksFromRows } from "@/lib/layouts/grouping";
 import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { taskFields } from "@/lib/layouts/tasks";
-import type { AppColumnDef } from "@/lib/table";
+import type { AppColumnDef, AppRow } from "@/lib/table";
+import { flattenTaskTree, nestTaskRows, type TaskTreeRow, treeParents } from "@/lib/taskTree";
 import { cn } from "@/lib/utils";
 
 type ProjectTasksListViewProps = {
@@ -100,6 +95,11 @@ const SortableRowContext = createContext<SortableRowContextValue | null>(null);
 
 const useSortableRowContext = () => useContext(SortableRowContext);
 
+/** How a row reads before anything happens to it: a subtask a shade darker
+ *  than the task it is under, an archived task faded. */
+const rowTone = (task: TaskTreeRow) =>
+  cn(task.level > 0 && "bg-black/3 dark:bg-black/20", task.archived_at !== null && "opacity-50");
+
 /**
  * Plain row wrapper — no useSortable hook overhead.
  * Used when no row drags: the table is sorted, grouped by what a drop can't
@@ -111,12 +111,12 @@ const PlainRowWrapper = ({
   virtualStyle,
   virtualIndex,
   measureRef,
-}: DataTableRowWrapperProps<TaskGroupRow>) => {
+}: DataTableRowWrapperProps<TaskTreeRow>) => {
   return (
     <TableRow
       ref={measureRef}
       style={virtualStyle}
-      className={cn(row.original.archived_at !== null && "opacity-50")}
+      className={rowTone(row.original)}
       data-state={row.getIsSelected() && "selected"}
       data-index={virtualIndex}
     >
@@ -135,7 +135,7 @@ const SortableRowWrapperInner = ({
   virtualStyle,
   virtualIndex,
   measureRef,
-}: DataTableRowWrapperProps<TaskGroupRow>) => {
+}: DataTableRowWrapperProps<TaskTreeRow>) => {
   const {
     attributes,
     listeners,
@@ -178,10 +178,7 @@ const SortableRowWrapperInner = ({
       <TableRow
         ref={setRefs}
         style={style}
-        className={cn(
-          isDragging && "bg-muted/60",
-          row.original.archived_at !== null && "opacity-50"
-        )}
+        className={cn(rowTone(row.original), isDragging && "bg-muted/60")}
         data-state={row.getIsSelected() && "selected"}
         data-index={virtualIndex}
       >
@@ -201,7 +198,7 @@ const GroupDragRowWrapper = ({
   virtualStyle,
   virtualIndex,
   measureRef,
-}: DataTableRowWrapperProps<TaskGroupRow>) => {
+}: DataTableRowWrapperProps<TaskTreeRow>) => {
   const group = row.original.group ?? NO_GROUP;
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } =
     useDraggable({ id: row.id, data: { taskId: row.original.id, group } });
@@ -229,9 +226,9 @@ const GroupDragRowWrapper = ({
           transform: CSS.Translate.toString(transform) || virtualStyle?.transform,
         }}
         className={cn(
+          rowTone(row.original),
           isDragging && "relative z-10 bg-muted/60",
-          drop.isOver && !isDragging && "bg-primary/10",
-          row.original.archived_at !== null && "opacity-50"
+          drop.isOver && !isDragging && "bg-primary/10"
         )}
         data-state={row.getIsSelected() && "selected"}
         data-index={virtualIndex}
@@ -249,7 +246,7 @@ const GroupDropRowWrapper = ({
   children,
   virtualIndex,
   measureRef,
-}: DataTableRowWrapperProps<TaskGroupRow>) => {
+}: DataTableRowWrapperProps<TaskTreeRow>) => {
   const { setNodeRef, isOver } = useDroppable({
     id: `group:${row.id}`,
     data: { group: row.original.group ?? NO_GROUP },
@@ -275,7 +272,57 @@ const GroupDropRowWrapper = ({
 
 const NOT_GROUPED: string[] = [];
 
-const groupDropRow = (props: DataTableRowWrapperProps<TaskGroupRow>) => (
+const subRowsOf = (row: TaskTreeRow) => row.subRows;
+
+/** How far one level of a task tree sits in from the one above: its fold
+ *  control and the gap after it, so a subtask's control is under its
+ *  parent's title. */
+const TREE_STEP = "1.75rem";
+
+/**
+ * A title cell in a task tree: indented by how deep the task is, with the
+ * control that folds its parts on the title's line. In a table where any task
+ * has parts, every row keeps the control's room, so titles line up.
+ */
+const TreeTitle = ({
+  row,
+  nested,
+  children,
+}: {
+  row: AppRow<TaskTreeRow>;
+  nested: boolean;
+  children: React.ReactNode;
+}) => {
+  const { t } = useTranslation("tasks");
+  const { level, subRows, title } = row.original;
+  if (!nested) return children;
+  const open = row.getIsExpanded();
+  return (
+    <div
+      className="flex items-start gap-1"
+      style={{ paddingInlineStart: `calc(${level} * ${TREE_STEP})` }}
+    >
+      {subRows?.length ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-6 shrink-0 text-muted-foreground"
+          aria-expanded={open}
+          aria-label={t(open ? "subtasks.fold" : "subtasks.unfold", { title })}
+          onClick={row.getToggleExpandedHandler()}
+        >
+          <ChevronRight className={cn("transition-transform", open && "rotate-90")} />
+        </Button>
+      ) : (
+        <span className="size-6 shrink-0" aria-hidden="true" />
+      )}
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+};
+
+const groupDropRow = (props: DataTableRowWrapperProps<TaskTreeRow>) => (
   <GroupDropRowWrapper {...props} />
 );
 
@@ -368,8 +415,30 @@ const ProjectTasksTableViewComponent = ({
     return { doneStatus, inProgressStatus };
   }, [taskStatuses]);
 
-  const columns = useMemo<AppColumnDef<TaskGroupRow>[]>(() => {
-    const shared = sharedTaskColumns<TaskGroupRow>({
+  // Grouped, a task has a row in each group it is in (one per tag, say) that
+  // the view shows; in each, a task's parts are listed under it.
+  const rows = useMemo<TaskTreeRow[]>(
+    () =>
+      nestTaskRows(
+        active
+          ? groupRows(tasks, active.grouping).filter(
+              (row) => !active.hidden.has(row.group ?? NO_GROUP)
+            )
+          : tasks
+      ),
+    [active, tasks]
+  );
+  // In the order the rows are drawn, which a drag shifts them by.
+  const sortableItems = useMemo(
+    () => flattenTaskTree(rows).map((row) => row.id.toString()),
+    [rows]
+  );
+  // Whether any task is listed under another, which gives every title the
+  // room of a fold control.
+  const nested = useMemo(() => rows.some((row) => row.subRows !== undefined), [rows]);
+
+  const columns = useMemo<AppColumnDef<TaskTreeRow>[]>(() => {
+    const shared = sharedTaskColumns<TaskTreeRow>({
       fields,
       env,
       isPriorityDisabled: () => statusDisabled,
@@ -388,7 +457,7 @@ const ProjectTasksTableViewComponent = ({
       // One hidden column per grouping, which renders a group's header. The
       // table's rows are its groups' while it is the one grouped by.
       ...groupings.map(
-        (each): AppColumnDef<TaskGroupRow> => ({
+        (each): AppColumnDef<TaskTreeRow> => ({
           id: each.column,
           accessorFn: (task) =>
             (each === grouped ? task.group : undefined) ?? each.keys(task)[0] ?? NO_GROUP,
@@ -439,6 +508,12 @@ const ProjectTasksTableViewComponent = ({
       },
       {
         ...shared.title,
+        // A task's parts are listed under it, indented, and fold with it.
+        cell: (context) => (
+          <TreeTitle row={context.row} nested={nested}>
+            {typeof shared.title.cell === "function" ? shared.title.cell(context) : null}
+          </TreeTitle>
+        ),
         // The widest column, so it takes the largest share of whatever space
         // the others leave over.
         size: 360,
@@ -520,6 +595,7 @@ const ProjectTasksTableViewComponent = ({
     grouped,
     taskStatuses,
     statusLookup,
+    nested,
     t,
   ]);
   // The view's columns take the places its columns held, in its order. While
@@ -538,7 +614,7 @@ const ProjectTasksTableViewComponent = ({
     const fieldOf = new Map(
       [...fields.values()].map((field) => [fieldColumnId(field.id), field.id])
     );
-    return ordered.map((column): AppColumnDef<TaskGroupRow> => {
+    return ordered.map((column): AppColumnDef<TaskTreeRow> => {
       const fieldId = column.id === undefined ? undefined : fieldOf.get(column.id);
       const { header } = column;
       if (fieldId === undefined || typeof header !== "function") return column;
@@ -549,7 +625,7 @@ const ProjectTasksTableViewComponent = ({
             {header(context)}
           </span>
         ),
-      } as AppColumnDef<TaskGroupRow>;
+      } as AppColumnDef<TaskTreeRow>;
     });
   }, [columns, shown, editing, fields]);
   const groupingOptions = useMemo(
@@ -557,38 +633,38 @@ const ProjectTasksTableViewComponent = ({
     [groupings]
   );
 
-  const sortableItems = useMemo(() => tasks.map((task) => task.id.toString()), [tasks]);
-
   // Grouping and sorting each disable drag-to-reorder: a manual order can only
   // be expressed by the table's own row order.
   const dndEnabled = canReorderTasks && sorting.length === 0 && grouping.length === 0;
+  // A row moves among the rows listed under the same task, whose order is the
+  // list's; dropped beside a row of another level, it stays where it was.
+  const parents = useMemo(() => treeParents(rows), [rows]);
+  const handleReorder = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (over && parents.get(Number(active.id)) !== parents.get(Number(over.id))) {
+        onDragCancel();
+        return;
+      }
+      onDragEnd(event);
+    },
+    [parents, onDragEnd, onDragCancel]
+  );
   // Grouped, a row drags into another group instead, where the grouping can
   // change what puts it there and the reader may change the task.
   const moveEnabled = grouped?.move !== undefined && !statusDisabled;
-
-  // Grouped, a task has a row in each group it is in (one per tag, say) that
-  // the view shows.
-  const rows = useMemo<TaskGroupRow[]>(
-    () =>
-      active
-        ? groupRows(tasks, active.grouping).filter(
-            (row) => !active.hidden.has(row.group ?? NO_GROUP)
-          )
-        : tasks,
-    [active, tasks]
-  );
 
   // Selection reports rows; a task in several groups holds one row in each,
   // so collapse them back to the tasks themselves.
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
   const handleSelectionChange = useCallback(
-    (selectedRows: TaskGroupRow[]) =>
+    (selectedRows: TaskTreeRow[]) =>
       onTaskSelectionChange?.(uniqueTasksFromRows(selectedRows, tasksById)),
     [onTaskSelectionChange, tasksById]
   );
 
   const rowWrapper = useCallback(
-    (props: DataTableRowWrapperProps<TaskGroupRow>) => {
+    (props: DataTableRowWrapperProps<TaskTreeRow>) => {
       if (dndEnabled) {
         return <SortableRowWrapperInner {...props} />;
       }
@@ -624,7 +700,7 @@ const ProjectTasksTableViewComponent = ({
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={onDragStart}
-      onDragEnd={dndEnabled ? onDragEnd : handleGroupDrop}
+      onDragEnd={dndEnabled ? handleReorder : handleGroupDrop}
       onDragCancel={onDragCancel}
     >
       <SortableContext
@@ -682,6 +758,7 @@ const ProjectTasksTableViewComponent = ({
           enableRowSelection
           onRowSelectionChange={handleSelectionChange}
           getRowId={groupRowId}
+          getSubRows={subRowsOf}
           onExitSelection={onExitSelection}
         />
       </SortableContext>
