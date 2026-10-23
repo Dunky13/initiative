@@ -498,6 +498,19 @@ stamp_changelog() {
     fi
 }
 
+# One version's changelog section, for a PR body. The changelog names its
+# pictures by repository path, which a PR body resolves against the PR's own
+# URL, so they are pointed at the commit instead (a commit outlives the
+# release branch, which is deleted once it merges).
+changelog_section_for_body() {
+    local version="$1"
+    local ref="$2"
+    local repo
+    repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+    awk '/^## \[/{if(found)exit} /^## \['"$version"'\]/{found=1} found{print}' CHANGELOG.md \
+        | sed -E "s#\]\((docs/[^)]+)\)#](https://github.com/$repo/raw/$ref/\1)#g"
+}
+
 preview_changelog() {
     local version="$1"
     echo -e "${CYAN}Changelog preview for $version:${NC}"
@@ -644,7 +657,7 @@ do_release() {
 - Bumps VERSION and stamps CHANGELOG.md
 
 ## Changelog
-$(awk -v ver="$new_version" '/^## \[/{if(found)exit} /^## \['"$new_version"'\]/{found=1} found{print}' CHANGELOG.md)
+$(changelog_section_for_body "$new_version" "$(git rev-parse HEAD)")
 
 ## Post-merge
 Tag \`v$new_version\` will be created automatically, triggering Docker build + GitHub Release.
