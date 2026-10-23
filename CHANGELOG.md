@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.77.1] - 2026-10-23
+
 ### Added
 
 - **Subtasks in tables and boards.** A table folds each task's subtasks under it, and cards show subtask progress and the task they are part of. Group by **Parent task** for a band per task; drag a card into another band to move it (#2936).
