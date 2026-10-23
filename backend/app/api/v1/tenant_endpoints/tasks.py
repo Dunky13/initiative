@@ -67,6 +67,7 @@ from app.services.tenant import cases as cases_service
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
 from app.services.tenant import task_checklist as checklist_service
+from app.services.tenant import task_hierarchy
 from app.services.tenant import task_creation as task_creation_service
 from app.core.tools import KINDS, Tool
 from app.services.tenant import named_people
@@ -313,6 +314,19 @@ async def create_task(
     current_user: ActorUserDep,
     guild_context: ProjectsWrite,
 ) -> Task:
+    task = await _insert_task(task_in, session, current_user, guild_context)
+    await session.commit()
+    return await _response(session, task.id)
+
+
+async def _insert_task(
+    task_in: TaskCreate,
+    session: ActorSessionDep,
+    current_user: ActorUserDep,
+    guild_context: ProjectsWrite,
+) -> Task:
+    """A new task, with all it was sent, in the session's transaction: what
+    :func:`create_task` commits, and what a promoted checklist line becomes."""
     project = await resource_access.load_authorized(
         session,
         _GOVERNING,
@@ -331,6 +345,7 @@ async def create_task(
             "properties",
             "checklist",
             "tz",
+            "parent_task_id",
         }
     )
     # What the task's type starts a task with, where it was left empty.
@@ -404,10 +419,14 @@ async def create_task(
         )
     await attachments_service.claim_uploads(session, task)
 
+    if task_in.parent_task_id is not None:
+        await task_hierarchy.set_parent(
+            session, task, task_in.parent_task_id, user_id=guild_context.user_id
+        )
+
     _touch_project(project, datetime.now(timezone.utc))
     await properties_service.write_on_create(session, task, task_in.properties)
-    await session.commit()
-    return await _response(session, task.id)
+    return task
 
 
 @router.get("/groups", response_model=GroupsResponse)
@@ -643,6 +662,8 @@ async def update_task(
     checklist_sent = update_data.pop("checklist", None) is not None
     picked_in = update_data.pop("tz", None)
     scope = update_data.pop("scope", None)
+    parent_sent = "parent_task_id" in update_data
+    parent_task_id = update_data.pop("parent_task_id", None)
     before = (
         await task_series.values_of(session, task)
         if task.recurrence or task.series_id
@@ -795,6 +816,10 @@ async def update_task(
                 tag_ids=tag_ids,
             )
         await properties_service.write_on_update(session, task, task_in.properties)
+        if parent_sent:
+            await task_hierarchy.set_parent(
+                session, task, parent_task_id, user_id=guild_context.user_id
+            )
     except (HTTPException, CodedError):
         await session.rollback()
         raise
@@ -1198,6 +1223,76 @@ async def toggle_checklist_item(
     # The statement wrote behind the ORM's back, so the loaded row is stale.
     session.expire(task)
     return checklist_service.read(row[0])
+
+
+@router.post(
+    "/{task_id}/checklist/{item_id}/promote",
+    response_model=TaskRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def promote_checklist_item(
+    task_id: int,
+    item_id: str,
+    session: ActorSessionDep,
+    current_user: ActorUserDep,
+    guild_context: ProjectsWrite,
+) -> Task:
+    """Make one checklist item a task of its own, part of this one.
+
+    The new task is in the same project, titled with the item's words (in a
+    done column if the item was ticked), and the item leaves the checklist:
+    the task is where the work is tracked from now on. A line that names
+    people or things, or runs past a title's length, keeps its whole words in
+    the new task's description.
+    """
+    parent = await resource_access.load_child(session, Task, task_id, access="write")
+    item = next(
+        (each for each in parent.checklist or [] if each.get("id") == item_id), None
+    )
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ChecklistMessages.ITEM_NOT_FOUND,
+        )
+    line = str(item.get("text", ""))
+    title, shortened = task_hierarchy.title_from_line(line)
+    if not title:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ChecklistMessages.ITEM_UNTITLED,
+        )
+    landing = None
+    if item.get("done"):
+        landing = task_statuses_service.first_by_category_preference(
+            await task_statuses_service.list_statuses(session, parent.project_id),
+            task_statuses_service.CATEGORY_FALLBACK[TaskStatusCategory.done],
+        )
+    task_in = TaskCreate(
+        title=title,
+        description=line if shortened else None,
+        project_id=parent.project_id,
+        task_status_id=landing.id if landing else None,
+        parent_task_id=parent.id,
+    )
+    task = await _insert_task(task_in, session, current_user, guild_context)
+
+    now = datetime.now(timezone.utc)
+    removed = await session.exec(
+        checklist_service.remove_statement(),
+        params=checklist_service.remove_params(
+            task_id=parent.id, item_id=item_id, now=now
+        ),
+    )
+    if removed.one_or_none() is None:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ChecklistMessages.ITEM_NOT_FOUND,
+        )
+    await session.commit()
+    # The statement wrote behind the ORM's back, so the loaded row is stale.
+    session.expire(parent)
+    return await _response(session, task.id)
 
 
 async def _record_ai_request(

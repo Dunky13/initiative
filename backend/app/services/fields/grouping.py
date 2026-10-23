@@ -143,6 +143,7 @@ class _How(Enum):
     reference = "reference"
     value = "value"
     relation = "relation"
+    reader = "reader"
 
 
 def _how(ds: Dataset, spec: FieldSpec) -> Optional[_How]:
@@ -152,6 +153,8 @@ def _how(ds: Dataset, spec: FieldSpec) -> Optional[_How]:
         return _How.bucket
     if not spec.offer or spec.name in HIDDEN_EVERYWHERE:
         return None
+    if spec.groups is not None:
+        return _How.reader
     if spec.kind is ControlKind.tag:
         return _How.tag
     if spec.column is not None:
@@ -224,11 +227,15 @@ async def group_rows(
     elif how is _How.value:
         held = await _by_value(session, ds, spec, ids)
         return Grouping(field, None, held, empty=spec.nullable, values=_values_of(spec))
+    elif how is _How.reader:
+        assert spec.groups is not None
+        held = await spec.groups(session, ids) if ids else {}
     else:
         held = await _by_relation(session, ds, _relation_for(ds, spec), ids)
-    # A tag or a relation is a set a row may have none of; a column is empty
-    # where it can be null, and a bucket expression always has a value.
-    empty = how in (_How.tag, _How.relation) or (
+    # A tag or a relation is a set a row may have none of, as a reader's
+    # groups are; a column is empty where it can be null, and a bucket
+    # expression always has a value.
+    empty = how in (_How.tag, _How.relation, _How.reader) or (
         how is not _How.bucket and spec.nullable
     )
     return Grouping(field, None, held, empty=empty)
