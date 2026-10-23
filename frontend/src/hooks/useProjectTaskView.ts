@@ -12,18 +12,19 @@
 
 import type { GroupingState, SortingState } from "@tanstack/react-table";
 import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
+  type ListLayoutDefinitionInput,
   type ListLayoutRead,
   type ListLayoutReadKind,
   type SortField,
   type TaskStatusRead,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
-import { CALENDAR_VIEW_MODE_KEY } from "@/components/calendar";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
+import { useFieldCatalog } from "@/hooks/useFieldCatalog";
 import {
-  deviceJSON,
   type ListViewSpec,
   NO_PART_VIEW,
   partOf,
@@ -32,9 +33,9 @@ import {
   usePresetLink,
   viewKey,
 } from "@/hooks/useListView";
-import { useProjectTaskStatuses } from "@/hooks/useProjects";
+import { useProject, useProjectTaskStatuses, useProjectTaskTypes } from "@/hooks/useProjects";
 import { useKnownTagIds } from "@/hooks/useTags";
-import { listLayouts, useInstanceLayouts } from "@/hooks/useToolLayouts";
+import { detailLayoutOf, listLayouts, useInstanceLayouts } from "@/hooks/useToolLayouts";
 import {
   EMPTY_TASK_FILTERS,
   type StoredTaskFilters,
@@ -44,51 +45,15 @@ import {
   taskFiltersEqual,
   taskSortFields,
 } from "@/lib/filters/taskFilters";
-import { viewGrouping } from "@/lib/layouts/grouping";
+import { pageParts, type StoredRegions } from "@/lib/layouts/detailLayout";
+import { columnsOf } from "@/lib/layouts/draft";
+import { catalogChoices, viewGrouping } from "@/lib/layouts/grouping";
+import { pluginFields, shippedPluginParts, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { type Preset, presetsOf, TASK_PRESETS } from "@/lib/layouts/presets";
+import { taskLayoutFor } from "@/lib/layouts/tasks";
 
 const readTaskFilters = (raw: unknown) => specFromStored(raw as StoredTaskFilters);
 const TASK_DEFAULTS = { filters: EMPTY_TASK_FILTERS, ...NO_PART_VIEW };
-
-/** What an older release kept for a project: its view under the project's id
- *  alone (`layout` or `view`, then filters and sort by layout), each layout's
- *  table grouping on the device, and the calendar's month or week, which was
- *  the same on every calendar. */
-const carryProjectView = (
-  items: Readonly<Record<string, unknown>>,
-  projectId: number
-): StoredListView | null => {
-  const old = (items[`project:${projectId}:views`] ?? {}) as {
-    layout?: unknown;
-    view?: unknown;
-    filters?: Record<string, unknown>;
-    sorting?: Record<string, unknown>;
-  };
-  const parts: NonNullable<StoredListView["parts"]> = {};
-  for (const kind of ["table", "board", "calendar"]) {
-    const grouping = (
-      deviceJSON(`initiative-project-${projectId}-${kind}-task-table`) as {
-        grouping?: unknown;
-      } | null
-    )?.grouping;
-    const entry = {
-      ...(old.filters?.[kind] !== undefined ? { filters: old.filters[kind] } : {}),
-      ...(old.sorting?.[kind] !== undefined ? { sorting: old.sorting[kind] } : {}),
-      ...(Array.isArray(grouping) ? { grouping } : {}),
-    };
-    if (Object.keys(entry).length > 0) parts[kind] = entry;
-  }
-  const layout = old.layout ?? old.view;
-  const mode = items[CALENDAR_VIEW_MODE_KEY];
-  if (Object.keys(parts).length === 0 && typeof layout !== "string" && typeof mode !== "string") {
-    return null;
-  }
-  return {
-    layout: typeof layout === "string" ? layout : null,
-    mode: typeof mode === "string" ? mode : null,
-    parts,
-  };
-};
 
 /** Where one person's view of a project's tasks is kept, and what it holds. */
 export const projectViewSpec = (
@@ -98,26 +63,32 @@ export const projectViewSpec = (
   key: viewKey(communityId, "project", projectId),
   read: readTaskFilters,
   defaults: TASK_DEFAULTS,
-  carryOver: (items) => carryProjectView(items, projectId),
 });
 
 /** What the URL names: `?layout=` and `?preset=`, which a link means for
  *  whoever opens it. */
 export type ProjectViewSearch = { layout?: string; preset?: string };
 
-/** The layout a person sees: the one the URL names (a link means the same
- *  layout for whoever opens it), else the one they were last in, else the one
- *  the project opens on. */
+/** The lists a project's menu offers: those it has not hidden. */
+const shownOf = (layouts: readonly ListLayoutRead[]) => layouts.filter((each) => !each.hidden);
+
+/** The layout a person sees, of those the project shows: the one the URL
+ *  names (a link means the same layout for whoever opens it), else the one
+ *  they were last in, else the one the project opens on. */
 const layoutShown = (
   search: ProjectViewSearch,
-  layouts: readonly ListLayoutRead[],
+  lists: readonly ListLayoutRead[],
   view: StoredListView
-) =>
-  layouts.find((each) => each.kind === search.layout) ??
-  layouts.find((each) => each.kind === view.layout) ??
-  layouts.find((each) => each.is_default) ??
-  layouts[0] ??
-  null;
+) => {
+  const layouts = shownOf(lists);
+  return (
+    layouts.find((each) => each.kind === search.layout) ??
+    layouts.find((each) => each.kind === view.layout) ??
+    layouts.find((each) => each.is_default) ??
+    layouts[0] ??
+    null
+  );
+};
 
 /**
  * Which layout a person sees and their filters and sort for it. A preset the
@@ -131,7 +102,7 @@ export const resolveProjectView = (
   view: StoredListView
 ) => {
   const layout = layoutShown(search, layouts, view);
-  const kind: ListLayoutReadKind = layout?.kind ?? "table";
+  const kind: ListLayoutReadKind = layout?.kind ?? "board";
   const presets = presetsOf(layout?.definition, TASK_PRESETS);
   const preset = presets.find((each) => each.slug === search.preset) ?? null;
   const own = partOf(view, kind, { read: readTaskFilters, defaults: TASK_DEFAULTS });
@@ -172,9 +143,32 @@ export function useProjectTaskView({
   const { refetch: refetchLayouts } = layoutsQuery;
   const retryLayouts = useCallback(() => void refetchLayouts(), [refetchLayouts]);
   const canConfigure = layoutsQuery.data?.can_configure ?? false;
-  const layouts = useMemo(() => listLayouts(layoutsQuery.data), [layoutsQuery.data]);
+  const lists = useMemo(() => listLayouts(layoutsQuery.data), [layoutsQuery.data]);
+  const layouts = useMemo(() => shownOf(lists), [lists]);
 
-  const view = useListView(spec, (kept) => layoutShown(search, layouts, kept)?.kind ?? "table");
+  // What an export of the tasks shows: the table's columns, and the task
+  // page's parts in its order, as the project's default type lays it out. The
+  // shipped ones are the app's, so the export is told them.
+  const { i18n } = useTranslation();
+  const plugins = usePluginsOnItems(useProject(projectId).data?.initiative_id);
+  const types = useProjectTaskTypes(projectId).data;
+  const defaultType = types?.find((type) => type.is_default) ?? types?.[0];
+  const exportFields = useMemo(() => {
+    // Hidden or not, the table's columns are what an export lists.
+    const table = lists.find((each) => each.kind === "table");
+    const fields = new Map(pluginFields(plugins, i18n.language).map((field) => [field.id, field]));
+    return {
+      columns: columnsOf((table?.definition ?? {}) as ListLayoutDefinitionInput, fields),
+      detail: pageParts(
+        taskLayoutFor(defaultType?.layout_preset).tree(
+          detailLayoutOf(layoutsQuery.data, "task", defaultType?.id) as StoredRegions | null,
+          shippedPluginParts(plugins)
+        )
+      ),
+    };
+  }, [lists, plugins, i18n.language, layoutsQuery.data, defaultType]);
+
+  const view = useListView(spec, (kept) => layoutShown(search, lists, kept)?.kind ?? "board");
   const kind = view.part as ListLayoutReadKind;
   const layout = layouts.find((each) => each.kind === kind) ?? null;
   const presets = useMemo(() => presetsOf(layout?.definition, TASK_PRESETS), [layout]);
@@ -221,9 +215,11 @@ export function useProjectTaskView({
   const tag_ids = useKnownTagIds(spec_.tag_ids);
 
   const { grouping: kept, groupingKept } = view;
+  const { groupings: catalog } = useFieldCatalog("tasks");
   const grouping = useMemo(
-    () => viewGrouping(layout?.definition, kind, groupingKept ? kept : null),
-    [layout, kind, kept, groupingKept]
+    () =>
+      viewGrouping(layout?.definition, kind, groupingKept ? kept : null, catalogChoices(catalog)),
+    [layout, kind, kept, groupingKept, catalog]
   );
 
   /**
@@ -267,11 +263,12 @@ export function useProjectTaskView({
     /** Name a preset in the URL, which applies it; or none. */
     pickPreset,
     rememberLayout,
-    /** How they show the calendar: month, week, day or a list. */
+    /** How much of the calendar the Gantt shows: a day, a week or a month. */
     mode: view.mode,
     setMode: view.setMode,
     grouping,
     setGrouping: view.setGrouping,
+    exportFields,
   };
 }
 
@@ -310,14 +307,19 @@ export const taskViewSorting = (
  *  the order their view of it shows, with the statuses those filters name. */
 export function useProjectTaskExportView(projectId: number) {
   const taskStatuses = useProjectTaskStatuses(projectId).data ?? EMPTY_STATUSES;
-  const { appliedSpec, kind, sorting } = useProjectTaskView({
+  const { appliedSpec, kind, sorting, exportFields } = useProjectTaskView({
     projectId,
     taskStatuses,
     search: NO_SEARCH,
   });
   return useMemo(
-    () => ({ tasks: appliedSpec, taskSorting: taskViewSorting(kind, sorting), taskStatuses }),
-    [appliedSpec, kind, sorting, taskStatuses]
+    () => ({
+      tasks: appliedSpec,
+      taskSorting: taskViewSorting(kind, sorting),
+      taskColumns: exportFields.columns,
+      taskStatuses,
+    }),
+    [appliedSpec, kind, sorting, exportFields, taskStatuses]
   );
 }
 

@@ -17,6 +17,7 @@ from app.core.audit_events import AuditEventType
 from app.core.messages import AIMessages
 from app.models.platform.guild import CommunityRole
 from app.schemas.ai_settings import AIProvider, ConnectionScope, ResolvedAISettings
+from app.services.ai_context import TaskContext
 from app.testing import create_file, create_task, emitted
 
 
@@ -35,7 +36,7 @@ def _wire_ai(monkeypatch, module) -> None:
         source="platform",
     )
 
-    async def _resolve(session, user, guild_id=None):
+    async def _resolve(session, guild_id=None):
         return resolved
 
     monkeypatch.setattr(module, "resolve_ai_settings", _resolve)
@@ -54,7 +55,7 @@ async def test_a_checklist_request_records_what_carried_it(
     _wire_ai(monkeypatch, tasks_endpoints)
 
     async def _generate(*args, **kwargs):
-        return ["Step one"]
+        return ["Step one"], TaskContext("{}", 0, 0)
 
     monkeypatch.setattr(ai_generation, "generate_checklist", _generate)
     capfd.readouterr()
@@ -91,7 +92,7 @@ async def test_a_description_request_records_its_own_purpose(
     _wire_ai(monkeypatch, tasks_endpoints)
 
     async def _generate(*args, **kwargs):
-        return "A description"
+        return "A description", TaskContext("{}", 0, 0)
 
     monkeypatch.setattr(ai_generation, "generate_description", _generate)
     capfd.readouterr()

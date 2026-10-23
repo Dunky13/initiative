@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { endOfDay, endOfMonth, format, startOfDay, startOfMonth } from "date-fns";
 import { HttpResponse, http } from "msw";
@@ -296,6 +296,7 @@ describe("CalendarsView presets", () => {
               {
                 kind: "calendar",
                 is_default: true,
+                hidden: false,
                 definition: { presets } as never,
                 updated_at: "2026-10-01T12:00:00.000Z",
               },
@@ -390,6 +391,27 @@ describe("CalendarsView on a community calendar", () => {
     properties: [],
     grants: [],
   };
+
+  it("starts a new event at the clicked hour", async () => {
+    server.use(
+      communityHttp.get("/calendar-entries/", () => HttpResponse.json({ events: [], tasks: [] })),
+      communityHttp.get("/calendars/:calendarId", () => HttpResponse.json(communityCalendar))
+    );
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(VIEW_PREFERENCES_QUERY_KEY, {
+      items: { [CALENDAR_VIEW_MODE_KEY]: "day" },
+    });
+    const { container } = renderPage(() => <CalendarsView soloCalendar={communityCalendar} />, {
+      queryClient,
+    });
+    await waitFor(() => expect(container.querySelectorAll('[role="button"]')).toHaveLength(24));
+    const afternoon = container.querySelectorAll('[role="button"]')[15];
+    if (!afternoon) throw new Error("Missing afternoon slot");
+    fireEvent.click(afternoon);
+    const dialog = await screen.findByRole("dialog");
+    const when = await within(dialog).findByRole("group", { name: /^when$/i });
+    expect(within(when).getAllByRole("combobox")[0]).toHaveTextContent("3:00 PM");
+  });
 
   it("asks for its own events only, and reads nothing initiative-shaped", async () => {
     const entries: URLSearchParams[] = [];

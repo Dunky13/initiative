@@ -27,6 +27,7 @@ import { SuggestCombobox } from "@/components/ui/suggest-combobox";
 import { Switch } from "@/components/ui/switch";
 import { PROVIDER_CONFIGS } from "@/lib/ai-providers";
 
+import { AIConnectionCommunitiesField } from "./AIConnectionCommunitiesField";
 import type { ConnectionMutations } from "./aiConnection.types";
 import { useAIConnectionForm } from "./useAIConnectionForm";
 
@@ -37,6 +38,7 @@ interface AIConnectionDialogProps {
   providers: AIProvider[];
   connection: AIConnectionResponse | null;
   mutations: ConnectionMutations;
+  onNeedsModel: (connection: AIConnectionResponse) => void;
 }
 
 export const AIConnectionDialog = ({
@@ -46,6 +48,7 @@ export const AIConnectionDialog = ({
   providers,
   connection,
   mutations,
+  onNeedsModel,
 }: AIConnectionDialogProps) => {
   const { t } = useTranslation("settings");
   const {
@@ -56,6 +59,7 @@ export const AIConnectionDialog = ({
     showApiKeyField,
     showBaseUrlField,
     modelOptions,
+    canSave,
     isFetchingModels,
     isPending,
     changeProvider,
@@ -63,9 +67,11 @@ export const AIConnectionDialog = ({
     submit,
   } = useAIConnectionForm({
     open,
+    scope,
     connection,
     mutations,
     onClose: () => onOpenChange(false),
+    onNeedsModel,
   });
 
   return (
@@ -108,21 +114,9 @@ export const AIConnectionDialog = ({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between rounded-md border px-4 py-3">
-              <div>
-                <p className="font-medium">{t("aiConnections.allowMemberKeysLabel")}</p>
-                <p className="text-muted-foreground text-sm">
-                  {t("aiConnections.allowMemberKeysDescription")}
-                </p>
-              </div>
-              <Switch
-                checked={form.allowMemberKeys}
-                onCheckedChange={(checked) => setField("allowMemberKeys", Boolean(checked))}
-              />
-            </div>
+            {form.provider === "custom" && (
+              <p className="text-muted-foreground text-xs">{t("aiConnections.customHint")}</p>
+            )}
           </div>
 
           {showApiKeyField && (
@@ -172,9 +166,7 @@ export const AIConnectionDialog = ({
                 suggestions={modelOptions}
                 value={form.model}
                 onValueChange={(value) => setField("model", value)}
-                placeholder={
-                  providerConfig?.modelPlaceholder ?? t("aiConnections.modelPlaceholder")
-                }
+                placeholder={t("aiConnections.modelPlaceholder")}
                 searchPlaceholder={t("aiConnections.modelSearchPlaceholder")}
                 loadingLabel={t("aiConnections.modelsLoading")}
                 emptyLabel={t("aiConnections.modelsEmpty")}
@@ -182,7 +174,19 @@ export const AIConnectionDialog = ({
                 onOpen={fetchModels}
                 isLoading={isFetchingModels}
               />
+              {!form.model && (
+                <p className="text-muted-foreground text-xs">
+                  {isEdit ? t("aiConnections.modelHintPick") : t("aiConnections.modelHintNew")}
+                </p>
+              )}
             </div>
+          )}
+
+          {scope === "platform" && (
+            <AIConnectionCommunitiesField
+              communities={form.communities}
+              onChange={(communities) => setField("communities", communities)}
+            />
           )}
 
           <div className="flex items-center justify-between rounded-md border px-4 py-3">
@@ -215,7 +219,7 @@ export const AIConnectionDialog = ({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t("aiConnections.cancel")}
             </Button>
-            <Button type="submit" disabled={isPending || !form.provider || !form.label}>
+            <Button type="submit" disabled={isPending || !canSave}>
               {isPending ? t("aiConnections.saving") : t("aiConnections.save")}
             </Button>
           </DialogFooter>

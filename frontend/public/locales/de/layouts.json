@@ -19,7 +19,6 @@
   "stay": "Weiter bearbeiten",
   "compact": "Layouts werden auf einem breiteren Bildschirm bearbeitet. Öffne diese Seite auf einem Tablet oder Computer.",
   "canvas": "Vorschau",
-  "calendarNote": "Ein Kalender hat keine Karte und keine Spalten zum Anordnen. Ob das Projekt damit öffnet, stellst du rechts ein.",
   "outline": "Gliederung",
   "card": "Karte",
   "row": "Zeile",
@@ -93,16 +92,25 @@
     "actions": "Was sonst mit der Aufgabe möglich ist: verschieben, duplizieren, archivieren, löschen und Plug-in-Aktionen."
   },
   "taskLayout": "Aufgabendetail",
+  "typedTaskLayout": "Seite „{{name}}“",
   "detailHelp": "Wie das Detail jeder Aufgabe in diesem Projekt aufgebaut ist. Was es weglässt, ist ausgeblendet.",
   "useShipped": "Ausgeliefertes Layout verwenden",
   "shipped": "Das ist das Layout, wie es ausgeliefert wird. Eine Änderung macht es zum eigenen Layout des Projekts.",
   "detailTitleHelp": "Das Detail jeder Aufgabe zeigt ihren Titel.",
   "opensFirst": "Wird zuerst geöffnet",
+  "shownInMenu": "Im Layout-Menü anzeigen",
+  "hiddenList": "{{name}} (ausgeblendet)",
+  "views": "Ansichten",
+  "taskPages": "Aufgabenseiten",
+  "pages": "Seiten",
+  "hidden": "Ausgeblendet",
+  "showView": "{{name}} im Layout-Menü anzeigen",
   "asShipped": "Wie ausgeliefert",
   "saveError": "Layouts konnten nicht gespeichert werden",
   "listHelp": {
     "table": "Wie die Aufgaben des Projekts als Tabelle aufgelistet werden: welche Spalten, in welcher Reihenfolge.",
     "board": "Wie jede Aufgabe auf dem Board erscheint: was ihre Karte zeigt.",
+    "gantt": "Die Aufgaben des Projekts auf einer Zeitleiste, nach ihren Daten, verbunden mit dem, wovon jede abhängt.",
     "calendar": "Die Aufgaben des Projekts in einem Kalender, nach ihren Daten."
   },
   "noEvents": "Diese Initiative hat dieses Jahr keine Termine. Füge einen hinzu, um sein Detail hier zu sehen.",
@@ -151,7 +159,33 @@
     "notGrouped": "Nicht gruppiert",
     "shown": "Angezeigte Gruppen:",
     "full": "Ein Layout bietet höchstens {{count}} Gruppierungen an. Entferne bei einer den Haken, um eine andere anzubieten.",
-    "hiddenFull": "Aus einer Gruppierung lassen sich höchstens {{count}} Gruppen auslassen. Zeige eine wieder an, um eine andere auszulassen."
+    "hiddenFull": "Aus einer Gruppierung lassen sich höchstens {{count}} Gruppen auslassen. Zeige eine wieder an, um eine andere auszulassen.",
+    "fields": {
+      "date_group": "Zeitraum",
+      "priority": "Priorität",
+      "task_status_id": "Status",
+      "task_type_id": "Typ",
+      "assignee_ids": "Zuständige",
+      "created_by": "Erstellt von",
+      "tag_ids": "Tags",
+      "project_id": "Projekt",
+      "archived_at": "Archiviert",
+      "completed_at": "Erledigt",
+      "created_at": "Erstellt",
+      "due_date": "Fälligkeitsdatum",
+      "start_date": "Startdatum",
+      "updated_at": "Geändert"
+    },
+    "buckets": {
+      "day": "Nach Tag",
+      "week": "Nach Woche",
+      "month": "Nach Monat",
+      "quarter": "Nach Quartal",
+      "year": "Nach Jahr"
+    },
+    "weekOf": "Woche ab {{date}}",
+    "quarter": "Q{{quarter}} {{year}}",
+    "bucket": "Wie {{name}} gruppiert wird"
   },
   "limits": {
     "heading": "Spaltenlimits",
@@ -257,5 +291,6 @@
       "comments": "Was darüber gesagt wird."
     },
     "noItems": "Schreibe eine Mitteilung in dieser Initiative, um hier ihr Layout zu sehen."
-  }
+  },
+  "calendarNote": "Ein Kalender hat keine Karte und keine Spalten zum Anordnen. Ob er angezeigt wird und ob das Projekt damit öffnet, stellst du rechts ein."
 }

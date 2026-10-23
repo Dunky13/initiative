@@ -7,7 +7,7 @@ icon: lucide/shield-half
 Two role systems, kept deliberately separate:
 
 - **Community roles** (superadmin / admin / member) govern a single workspace. See [Working with communities](../guides/communities.md).
-- **Platform roles** govern the **whole server** — every community, every user. That's this page. The ladder runs member → support → moderator → operator → owner. **Admin** belongs to the community ladder above, and stays there.
+- **Platform roles** govern the **whole server** — every community, every user. That's this page. The ladder runs member → moderator → support → operator → owner. **Admin** belongs to the community ladder above, and stays there.
 
 Platform roles are managed by the [owner](#the-owner) — and for some actions, operators — from **Settings → Platform** and the **Operator dashboard**.
 
@@ -18,8 +18,8 @@ Five rungs, each adding to the one below:
 | Role | What it can do |
 |---|---|
 | **Member** | Standard access to their own communities. No server-wide privileges. This is everyone by default. |
-| **Support** | Read-only visibility of the platform's users and communities, can open a community's billing in the billing service's support console, can **request** time-bound access to a community to help with an issue, and can let somebody answer the age question again after a typo. |
-| **Moderator** | Everything Support can do, **plus** user management (suspend/reactivate, sign out everywhere, revoke an account's API keys), content moderation, and suspending a community under a [Moderate grant](#suspending-a-community-as-a-moderator). |
+| **Moderator** | Moderation, and nothing else. Finds accounts and communities, renames an account or clears its picture and profile, suspends an account, and asks for a [Moderate grant](#what-a-grant-can-say) to read a community's held content and [suspend the community](#suspending-a-community-as-a-moderator). No other grant: never a community's settings, billing, or a plain look around. |
+| **Support** | Everything Moderator can do, **plus** account recovery (reactivate and restore, sign out everywhere, reset a password or two-factor, revoke an account's API keys), opening a community's billing in the billing service's support console, **requesting** any kind of time-bound access to a community to help with an issue, and letting somebody answer the age question again after a typo. |
 | **Operator** | Manages users, communities, and roles platform-wide, has cross-community access (via break-glass), approves access requests, writes [announcements](announcements.md), writes [sign-in placement rules](single-sign-on.md#rules-on-a-provider), and opens [billing insights](#billing-insights). |
 | **Owner** | Full control, **including server-wide configuration** (single sign-on, email, branding, AI). The only role that can change configuration. |
 
@@ -55,8 +55,8 @@ The **first person to register** on a new server becomes the **owner**. The owne
 - **Sign out everywhere** — ends every session the account has, on every device. For an account somebody else may have got into: its holder signs in again, and whoever else had it doesn't.
 - **Reset password** sends them a reset email.
 - **Resend verification email**, shown on an account whose address isn't confirmed yet.
-- **Turn password sign-in back on**, shown on an account marked **Password sign-in off**. Five wrong passwords or codes in fifteen minutes switch it off for fifteen minutes; a second time that day, an hour; after that, four hours each time. It comes back on by itself, or as soon as they reset their password from the emailed link, so this is for when they can't wait. Their passkeys work throughout, and so does anywhere they're already signed in. Moderator and above.
-- **Clear two-factor authentication**, shown on an account with an authenticator app set up, while signing in with a password or an emailed code is turned on — those are the only sign-ins that ask for its code. For when their phone is gone and so are the recovery codes. It takes the authenticator off, signs them out everywhere and emails them; they sign in the way they usually do and set it up again. Moderator and above.
+- **Turn password sign-in back on**, shown on an account marked **Password sign-in off**. Five wrong passwords or codes in fifteen minutes switch it off for fifteen minutes; a second time that day, an hour; after that, four hours each time. It comes back on by itself, or as soon as they reset their password from the emailed link, so this is for when they can't wait. Their passkeys work throughout, and so does anywhere they're already signed in. Support and above.
+- **Clear two-factor authentication**, shown on an account with an authenticator app set up, while signing in with a password or an emailed code is turned on — those are the only sign-ins that ask for its code. For when their phone is gone and so are the recovery codes. It takes the authenticator off, signs them out everywhere and emails them; they sign in the way they usually do and set it up again. Support and above.
 - **Platform role** — move them up or down the ladder. You can't grant a rung above your own.
 - **Cases** — how many open cases in your [operations community](#where-operations-work-lands) the account filed or is the subject of, with a link to each. A link opens only for someone with access to where the case is kept.
 - **Delete user**, last, choosing how thorough it is:
@@ -64,7 +64,7 @@ The **first person to register** on a new server becomes the **owner**. The owne
     - **Anonymize** — personal details removed; their content remains as "Deleted user"; not reversible.
     - **Hard delete** — everything removed, including authored content; not reversible.
 
-Each of those asks for its own capability, so a moderator opening the same panel sees everything but the platform role. What's offered on each account is worked out by the server: nothing on an account above your own rung, and nothing on your own — that's yours to change from your own settings.
+Each of those asks for its own capability, so a moderator opening the same panel sees the username, the picture, the profile fields and **Suspend**, and support sees everything but the platform role and deleting. What's offered on each account is worked out by the server: nothing on an account above your own rung, and nothing on your own — that's yours to change from your own settings.
 
 The row's actions menu keeps **Export**, one account as CSV. **Export all as CSV**, above the list, takes the lot.
 
@@ -86,14 +86,14 @@ A request names **what it reaches**, and the two halves are asked for separately
 
 | | What it reaches |
 |---|---|
-| **Content** | What the community holds — read-only, read-and-write, or **moderate**. A read-write grant edits existing material; it doesn't author new material or manage members. A moderate grant reads everything, including what is [held](#held-content), and changes nothing. Only moderators and operators can ask for one, and it can't be self-issued. |
+| **Content** | What the community holds — read-only, read-and-write, or **moderate**. A read-write grant edits existing material; it doesn't author new material or manage members. A moderate grant reads everything, including what is [held](#held-content), and changes nothing. Moderators, support and operators can ask for one, and it can't be self-issued. |
 | **Settings** | The community's configuration and nothing inside it, held at **admin** or **superadmin** — the community's own two rungs. Somebody helping with a moderation setting has no business in anybody's files, and this is how they don't end up there. |
 
 Ask for one, the other, or both. Each is approved and recorded on its own.
 
 ### The two paths
 
-- **Request and approve** (Support and Moderator). Someone **requests** what they need, for a chosen number of hours, with a reason and the [case it's for](#grants-and-their-cases). An approver (Operator/Owner) grants or denies it, and it **auto-expires**.
+- **Request and approve** (Moderator and Support). A moderator asks for **Moderate** and nothing else; support asks for whatever the job needs. Someone **requests** it, for a chosen number of hours, with a reason and the [case it's for](#grants-and-their-cases). An approver (Operator/Owner) grants or denies it, and it **auto-expires**.
 - **Break glass** (Operator and Owner). For urgent situations, an operator can **self-issue** an emergency grant — approved instantly, scoped to that community, expiring automatically. Breaking glass issues both halves, the settings one at superadmin, because an emergency is no time to discover you asked for the wrong shape. Each is named and recorded separately, so afterwards the log says exactly how far it went.
 
 ### Grants and their cases
@@ -121,7 +121,7 @@ Operators and owners can write **announcements** — notices shown in a dialog t
 
 ## What you decide per community
 
-**Operator dashboard → Communities** lists every community on the server — deleted and suspended ones included — for support and above. Each row offers what your role allows: support and moderators see its members, storage and status, open its billing in the support console, and ask for access to it; operators and owners also set its status, open the operator console, and break glass. **Manage**, for operators and owners, opens what you set for one of them: its storage, member and [guest](../sharing/guests.md) limits, whether it may configure [its own sign-in](single-sign-on.md#letting-a-community-use-a-provider), and a few features you can switch on or off. See [File & object storage](object-storage.md#per-community-storage-limits) for the limits.
+**Operator dashboard → Communities** lists every community on the server — deleted and suspended ones included — for moderators and above. Each row offers what your role allows: moderators see its members, storage and status and ask for a Moderate grant on it; support also opens its billing in the support console and asks for any access; operators and owners also set its status, open the operator console, and break glass. **Manage**, for operators and owners, opens what you set for one of them: its storage, member and [guest](../sharing/guests.md) limits, whether it may configure [its own sign-in](single-sign-on.md#letting-a-community-use-a-provider), and a few features you can switch on or off. See [File & object storage](object-storage.md#per-community-storage-limits) for the limits.
 
 **Help requests** is one of those features, and it starts off. Switched on, the community's members can ask about the community itself behind **Ask for help**, and whoever holds its seat can ask for a copy of its data or for it to be deleted; what they send lands in your support project (see [Where operations work lands](#where-operations-work-lands)) — so it can only be switched on once that project is set up.
 
@@ -163,7 +163,7 @@ Deleted communities are in that list too, marked with the date everything in the
 
 Security notes, moderation reports, support requests and feedback each open a case in one community of your choosing: the **operations community**. It's an ordinary community in every respect, and its members work the cases like any other tasks.
 
-It's all one page, **Settings → Platform → Intake**. Pick the community, then say which of its projects each kind lands in — or choose **Set this up for me** and get a ready-made project with its own statuses and fields. Pause a kind and it stops receiving; choose no community at all and nothing is routed anywhere.
+It's all one page, **Settings → Platform → Intake**. Pick the community, then say which of its projects each kind lands in, and if you like, which of that project's task types its cases are — or choose **Set this up for me** and get a ready-made project with its own statuses and fields. Pause a kind and it stops receiving; choose no community at all and nothing is routed anywhere.
 
 Give security and moderation an initiative each, so only the people working those cases can read them. The page says so if two kinds share one.
 

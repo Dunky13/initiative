@@ -45,7 +45,7 @@ import json
 from dataclasses import dataclass, fields, replace
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-from app.core.capabilities import Capability, roles_with_capability
+from app.core.capabilities import may_hold_grant
 from app.core.plugin_scopes import (
     PLUGIN_SCOPE_PREFIX,
     LEVEL_SCOPES,
@@ -55,7 +55,11 @@ from app.core.plugin_scopes import (
 from app.core.tools import Tool
 from app.db import gucs
 from app.db.authorization import LIVE_GRANT, live_membership, sql_values
-from app.models.platform.access_grant import AccessGrantPurpose, AccessLevel
+from app.models.platform.access_grant import (
+    AccessGrantPurpose,
+    AccessLevel,
+    SettingsLevel,
+)
 from app.models.platform.plugin_service_registration import (
     RegistrationKind,
     registration_live_sql,
@@ -73,7 +77,7 @@ from app.models.platform.identity_ref import (
     IdentityPurpose,
     ref_prefix,
 )
-from app.models.platform.user import UserStatus
+from app.models.platform.user import UserRole, UserStatus
 from app.models.tenant.plugin_member_consent import ConsentAccess
 from app.models.tenant.initiative import DEFAULT_PERMISSION_VALUES, PermissionKey
 
@@ -128,12 +132,26 @@ def _writes(values: dict[gucs.Guc, str]) -> str:
     )
 
 
-#: The platform tiers that hold ``content.moderate``: who may read held content
-#: under a ``moderate`` grant.
-_MODERATING_TIERS_SQL = ", ".join(
-    f"'{role.value}'"
-    for role in sorted(roles_with_capability(Capability.CONTENT_MODERATE), key=str)
-)
+def _tiers_holding(purpose: AccessGrantPurpose, level: str) -> str:
+    """The platform tiers that may hold a grant of ``purpose`` at ``level``,
+    as a SQL list."""
+    return ", ".join(
+        f"'{role.value}'"
+        for role in sorted(UserRole, key=str)
+        if may_hold_grant(role, purpose.value, level)
+    )
+
+
+#: A grant row ``g`` its holder may hold at their tier as it stands now, not as
+#: it stood when the grant was approved (:func:`may_hold_grant`): a
+#: ``moderate`` grant while they moderate, any other while they may ask for
+#: any or break glass.
+_GRANT_HELD = f"""COALESCE(CASE
+      WHEN g.purpose = '{AccessGrantPurpose.content.value}'
+       AND g.access_level::text = '{AccessLevel.moderate.value}'
+      THEN {gucs.PLATFORM_ROLE.sql} IN ({_tiers_holding(AccessGrantPurpose.content, AccessLevel.moderate.value)})
+      ELSE {gucs.PLATFORM_ROLE.sql} IN ({_tiers_holding(AccessGrantPurpose.content, AccessLevel.read.value)})
+    END, false)"""
 
 #: The request is routed into a guest role: the role in use carries the guest
 #: floor. A ``guest`` membership row is read only under one, and under any
@@ -184,6 +202,7 @@ my_grants AS MATERIALIZED (
   WHERE g.guild_id = {gucs.ROUTED_GUILD_ID}
     AND g.user_id = {gucs.USER_ID}
     AND {LIVE_GRANT}
+    AND {_GRANT_HELD}
 )"""
 
 #: What the person statement writes: each standing key and its expression.
@@ -192,8 +211,18 @@ _PERSON_STANDING: dict[gucs.Guc, str] = {
     gucs.GUILD_ADMIN: f"""COALESCE((
       SELECT (m.role IN ({_ADMIN_RUNGS_SQL}))::text FROM my_membership m
     ), 'false')""",
+    # The seat as ``guild_superadmin()`` answers it, lent by a grant only while
+    # the grant is still held.
     gucs.GUILD_SEAT: f"""COALESCE((
-      SELECT public.guild_superadmin({gucs.ROUTED_GUILD_ID}, {gucs.USER_ID})::text
+      SELECT (public.guild_superadmin({gucs.ROUTED_GUILD_ID}, {gucs.USER_ID})
+        AND (EXISTS (
+          SELECT 1 FROM my_membership m
+          WHERE m.role = '{CommunityRole.superadmin.value}'
+        ) OR EXISTS (
+          SELECT 1 FROM my_grants g
+          WHERE g.purpose = '{AccessGrantPurpose.settings.value}'
+            AND g.access_level = '{SettingsLevel.superadmin.value}'
+        )))::text
     ), 'false')""",
     gucs.SETTINGS_RUNG: f"""COALESCE((
       SELECT CASE
@@ -222,14 +251,13 @@ _PERSON_STANDING: dict[gucs.Guc, str] = {
       )::text
     )""",
     # A moderate grant reads what the platform holds only while its holder
-    # still moderates: the tier is read as it stands now, not as it stood when
-    # the grant was approved.
+    # still moderates, which ``my_grants`` holds every grant to.
     gucs.PAM_MODERATE: f"""(
-      SELECT (EXISTS (
+      SELECT EXISTS (
         SELECT 1 FROM my_grants g
         WHERE g.purpose = '{AccessGrantPurpose.content.value}'
           AND g.access_level = '{AccessLevel.moderate.value}'
-      ) AND COALESCE({gucs.PLATFORM_ROLE.sql} IN ({_MODERATING_TIERS_SQL}), false))::text
+      )::text
     )""",
     gucs.MEMBER_INITIATIVES: """COALESCE((
       SELECT string_agg(DISTINCT mi.initiative_id::text, ',')

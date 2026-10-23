@@ -44,7 +44,6 @@ from app.services.auth import sessions as session_service
 from app.services.auth import challenges as challenge_service
 from app.services.auth import totp as totp_service
 from app.services.platform import api_keys as api_keys_service
-from app.services.platform import billing_ping
 from app.services.platform import identity_refs
 from app.services.platform.retention import ACCOUNT_DELETION
 from app.services.platform import user_avatars as user_avatars_service
@@ -53,12 +52,10 @@ from app.models.tenant.task import TaskAssignee
 from app.models.platform.notification import Notification
 from app.models.tenant.personal_item import PersonalItem
 from app.models.tenant.reaction_digest import ReactionDigestItem
-from app.models.tenant.ai_member_key import GuildAIMemberKey
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models.platform.sign_in_lock import SignInLock
     from app.schemas.platform.user import OperatorUserRead, UserRead, UserSummary
-from app.models.tenant.ai_member_pref import GuildAIMemberPref
 from app.models.platform.api_key import UserApiKey
 from app.models.platform.account_change_hold import AccountChangeHold
 from app.models.platform.user_token import UserToken
@@ -246,14 +243,6 @@ async def _erase_in_guild(
     await guild_session.exec(
         delete(EventReminderDispatch).where(EventReminderDispatch.user_id == user_id)
     )
-    # AI credentials (member API keys) + connection preference for this
-    # guild — held in custody for them, so erasure removes them.
-    await guild_session.exec(
-        delete(GuildAIMemberKey).where(GuildAIMemberKey.user_id == user_id)
-    )
-    await guild_session.exec(
-        delete(GuildAIMemberPref).where(GuildAIMemberPref.user_id == user_id)
-    )
     await guild_session.exec(
         delete(TaskAssignmentDigestItem).where(
             TaskAssignmentDigestItem.user_id == user_id
@@ -355,7 +344,6 @@ async def _drop_user_memberships(
             detail={"role": membership.role.value, "via": "account_closed"},
         )
         await session.delete(membership)
-        billing_ping.notify_membership_changed(membership.guild_id)
 
     return (await session.exec(select(User).where(User.id == user_id))).one()
 

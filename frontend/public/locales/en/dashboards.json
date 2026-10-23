@@ -155,6 +155,7 @@
   "filterField": {
     "status_category": "Status category",
     "task_status_id": "Status",
+    "task_type_id": "Type",
     "priority": "Priority",
     "assignee_ids": "Assignee",
     "tag_ids": "Tag",
@@ -188,6 +189,7 @@
     "value": "Value",
     "empty": "No filters — this shows everything in the initiative.",
     "chooseValue": "Choose…",
+    "typeInProject": "{{type}} ({{project}})",
     "relative": "Relative",
     "absolute": "On a date",
     "relativeDays": "Days from today",
@@ -255,7 +257,8 @@
     "column": "Column",
     "date": "Date",
     "total": "Total",
-    "series": "Split by"
+    "series": "Split by",
+    "done": "Done"
   },
   "builder": {
     "dataset": "Show data from",
@@ -305,7 +308,8 @@
     "counter_groups": "Counter groups",
     "task_statuses": "Task statuses",
     "property_values": "Property values",
-    "property_definitions": "Properties"
+    "property_definitions": "Properties",
+    "relationships": "Links"
   },
   "viewMode": {
     "label": "Run dashboard as",

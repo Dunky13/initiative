@@ -11,6 +11,7 @@ from sqlalchemy.orm import undefer
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.services.tenant.task_types import get_default_type
 from app.db.schema_provisioning import guild_schema_name
 from app.db.soft_delete_filter import SOFT_DELETE_MODELS, select_including_deleted
 from app.db.tenancy import GUILD_SCOPED_TABLES
@@ -62,6 +63,7 @@ async def _create_task(
     task = Task(
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         title=title,
         priority=TaskPriority.medium,
     )

@@ -12,6 +12,7 @@ from typing import List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
 import icalendar
+from icalendar.parser import Contentlines
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -107,17 +108,28 @@ def _dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
-def ical_from_export_dicts(events: List[dict]) -> bytes:
+def ical_from_export_dicts(
+    events: List[dict], *, name: Optional[str] = None, tz: Optional[str] = None
+) -> bytes:
     """Serialize event export dicts (``event_export_dict`` shape) to iCal
     bytes — the render half of the split, callable from the export engine's
     worker replay where only JSON survives.
 
     Times are UTC and an all-day event's days are its UTC dates, as stored, so
-    every client shows the file in its own zone."""
+    every client shows the file in its own zone. ``name`` and ``tz`` are a
+    subscription's: what the subscribing app calls the calendar, and the zone
+    it lists it in (``X-WR-TIMEZONE``). An app that honours that header reads
+    a UTC start as a time in its zone, which would put a repeat on that zone's
+    daylight saving, so a subscription anchors no repeat in UTC it can avoid,
+    and names no zone when one is left."""
     cal = icalendar.Calendar()
     cal.add("prodid", "-//Initiative//EN")
     cal.add("version", "2.0")
     cal.add("calscale", "GREGORIAN")
+    if name:
+        cal.calendar_name = name
+    fixed_zones: set[str] = set()
+    anchored_in_utc = False
 
     for event in events:
         vevent = icalendar.Event()
@@ -145,6 +157,29 @@ def ical_from_export_dicts(events: List[dict]) -> bytes:
             # A repeat's days are where it was picked, so the start is written
             # in a fixed offset that puts it on that day.
             zone = _picked_zone(start_at, event.get("recurrence_shift") or 0)
+            if tz and event.get("recurrence") and zone is timezone.utc:
+                if recurrence.of_hours(recurrence.parse(event["recurrence"]).rule):
+                    # A rule of hours keeps its exact offset, UTC.
+                    anchored_in_utc = True
+                else:
+                    # A repeat of days, an hour either side of UTC that keeps
+                    # its start on its date: the same days, the same instants.
+                    zone = ZoneInfo("Etc/GMT-1" if start_at.hour < 23 else "Etc/GMT+1")
+            if isinstance(zone, timezone) and zone is not timezone.utc:
+                # datetime.timezone has no IANA name for add_missing_timezones
+                # to resolve. Define its constant offset for other clients too.
+                tzid = str(zone)
+                if tzid not in fixed_zones:
+                    fixed = icalendar.Timezone()
+                    fixed.add("tzid", tzid)
+                    standard = icalendar.TimezoneStandard()
+                    standard.add("dtstart", datetime(1970, 1, 1))
+                    standard.add("tzoffsetfrom", zone.utcoffset(None))
+                    standard.add("tzoffsetto", zone.utcoffset(None))
+                    standard.add("tzname", tzid)
+                    fixed.add_component(standard)
+                    cal.add_component(fixed)
+                    fixed_zones.add(tzid)
             vevent.add("dtstart", start_at.astimezone(zone))
             vevent.add("dtend", end_at.astimezone(zone))
 
@@ -170,7 +205,9 @@ def ical_from_export_dicts(events: List[dict]) -> bytes:
                     return value.date() if isinstance(value, datetime) else value
                 if isinstance(value, datetime):
                     return value
-                return datetime.combine(value, start_at.timetz())
+                offset = timedelta(minutes=event.get("recurrence_shift") or 0)
+                picked_time = (start_at + offset).time()
+                return datetime.combine(value, picked_time, timezone.utc) - offset
 
             for value in repeat.exdates:
                 vevent.add("exdate", typed(value))
@@ -191,6 +228,8 @@ def ical_from_export_dicts(events: List[dict]) -> bytes:
 
         cal.add_component(vevent)
 
+    if tz and not anchored_in_utc:
+        cal.add("x-wr-timezone", tz)
     cal.add_missing_timezones()
     return cal.to_ical()
 
@@ -285,7 +324,35 @@ def _dates(prop) -> List[date | datetime]:
     return [value.dt for dates in lists for value in dates.dts]
 
 
-def _extract_vevent(component, zone: tzinfo) -> Optional[dict]:
+def _event_components(content: str) -> list[tuple[icalendar.Component, str | None]]:
+    """Parsed events with their original duration spelling.
+
+    icalendar reduces both P1D and PT24H to timedelta(days=1). RFC 5545
+    distinguishes nominal days from elapsed hours across a clock change.
+    Keep that distinction from unfolded content lines, excluding VALARMs.
+    """
+    durations: list[str | None] = []
+    stack: list[str] = []
+    for line in Contentlines.from_ical(content):
+        if not line:
+            continue
+        name, _, value = line.parts()
+        name = name.upper()
+        if name == "BEGIN":
+            stack.append(value.upper())
+            if value.upper() == "VEVENT":
+                durations.append(None)
+        elif name == "END":
+            stack.pop()
+        elif name == "DURATION" and stack and stack[-1] == "VEVENT":
+            durations[-1] = value
+    events = icalendar.Calendar.from_ical(content).walk("VEVENT")
+    return list(zip(events, durations, strict=True))
+
+
+def _extract_vevent(
+    component, zone: tzinfo, duration_text: str | None = None
+) -> Optional[dict]:
     """Extract event data from a VEVENT component. An all-day event keeps its
     dates as UTC dates, first midnight to last 23:59:59; a floating time is
     read in ``zone``, the importer's."""
@@ -299,6 +366,23 @@ def _extract_vevent(component, zone: tzinfo) -> Optional[dict]:
     start_val = dtstart.dt
     end_val = dtend.dt if dtend else start_val
     all_day = isinstance(start_val, date) and not isinstance(start_val, datetime)
+    if dtend is None and (duration := component.get("duration")) is not None:
+        if duration.dt <= timedelta(0):
+            raise ValueError("An event's duration must be positive.")
+        nominal_text = (duration_text or duration.to_ical().decode()).split("T")[0]
+        nominal = (
+            timedelta(0)
+            if nominal_text in ("P", "+P", "-P")
+            else icalendar.vDuration.from_ical(nominal_text)
+        )
+        elapsed = duration.dt - nominal
+        if all_day:
+            if elapsed:
+                raise ValueError("An all-day duration contains only days or weeks.")
+            end_val = start_val + nominal
+        else:
+            aware = start_val if start_val.tzinfo else start_val.replace(tzinfo=zone)
+            end_val = (aware + nominal).astimezone(timezone.utc) + elapsed
 
     if all_day:
         if isinstance(end_val, datetime):
@@ -327,14 +411,11 @@ def _extract_vevent(component, zone: tzinfo) -> Optional[dict]:
 def parse_ical(content: str, tz: Optional[str] = None) -> ICalParseResult:
     """Parse an .ics string and return a preview of found events."""
     zone = resolve_zone(tz)
-    cal = icalendar.Calendar.from_ical(content)
     events: List[ICalEventPreview] = []
     has_recurring = False
 
-    for component in cal.walk():
-        if component.name != "VEVENT":
-            continue
-        data = _extract_vevent(component, zone)
+    for component, duration_text in _event_components(content):
+        data = _extract_vevent(component, zone, duration_text)
         if not data:
             continue
         has_rec = data["recurrence"] is not None
@@ -370,7 +451,6 @@ def build_calendar_events(
     Returns (events, errors, skipped_count). Does NOT persist — caller handles that.
     """
     zone = resolve_zone(tz)
-    cal = icalendar.Calendar.from_ical(content)
     events: List[CalendarEvent] = []
     errors: List[ICalImportError] = []
     skipped = 0
@@ -379,13 +459,13 @@ def build_calendar_events(
     series: dict[str, CalendarEvent] = {}
     changed: List[Tuple[CalendarEvent, str, date | datetime]] = []
 
-    components = [c for c in cal.walk() if c.name == "VEVENT"]
+    components = _event_components(content)
     # Each series before the occurrences that point at it.
-    components.sort(key=lambda c: c.get("recurrence-id") is not None)
-    for position, component in enumerate(components, start=1):
+    components.sort(key=lambda item: item[0].get("recurrence-id") is not None)
+    for position, (component, duration_text) in enumerate(components, start=1):
         title = str(component.get("summary") or "") or None
         try:
-            data = _extract_vevent(component, zone)
+            data = _extract_vevent(component, zone, duration_text)
             if not data:
                 errors.append(
                     ICalImportError(problem=ICalImportProblem.no_start, title=title)

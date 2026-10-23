@@ -99,6 +99,8 @@ export interface MyCalendarProps {
    * `body` is the filter panel and the calendar itself.
    */
   frame: (parts: { filters: MyCalendarFilters; body: ReactNode }) => ReactNode;
+  /** Whether the calendar draws its own card: not inside a widget's. */
+  framed?: boolean;
 }
 
 /**
@@ -107,7 +109,7 @@ export interface MyCalendarProps {
  * same view of the same calendar, kept in one place of the reader's own, so
  * a filter set on one is set on the other.
  */
-export const MyCalendar = ({ frame }: MyCalendarProps) => {
+export const MyCalendar = ({ frame, framed = true }: MyCalendarProps) => {
   const { t } = useTranslation(["tasks", "calendars", "common"]);
   const { communities } = useCommunities();
   const { user } = useAuth();
@@ -416,6 +418,7 @@ export const MyCalendar = ({ frame }: MyCalendarProps) => {
           onFocusDateChange={setFocusDate}
           onEntryClick={handleEntryClick}
           weekStartsOn={weekStartsOn}
+          framed={framed}
         />
       )}
     </div>

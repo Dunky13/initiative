@@ -5,10 +5,9 @@ assignees to notify, which tags and properties to attach) and a row-shaped
 half: find the end of the list, make sure the project has its statuses, decide
 which status the task starts in, and build the row. This module is the second
 half, shared by the task endpoint and the intake writer, together with the
-pieces every task change reaches for: replacing a task's assignees, rolling a
-recurring task forward to its next occurrence when it is completed (from the
-task routes and from a status change that moves tasks between columns), and
-copying tasks (``copy_tasks``), on their own or with their project.
+pieces every task change reaches for: replacing a task's assignees and copying
+tasks (``copy_tasks``), on their own or with their project. A repeating task's
+next task is made in ``task_series``.
 
 Nothing here commits, so a caller can compose it into a larger transaction.
 """
@@ -32,7 +31,16 @@ from app.core.search import SearchEntityType
 from app.core.tools import Tool
 from app.db.session import require_actor_context
 from app.models.tenant.project import Project
-from app.models.tenant.task import Task, TaskAssignee, TaskStatus, TaskStatusCategory
+from app.models.tenant.task import (
+    RecurrenceStrategy,
+    Task,
+    TaskAssignee,
+    TaskStatus,
+    TaskStatusCategory,
+    TaskType,
+)
+from app.schemas.recurrence import validate_task_recurrence
+from app.schemas.tenant.task import ChecklistItemInput
 from app.services import notifications as notifications_service
 from app.services.tenant import relationships
 from app.services.tenant import named_people
@@ -41,8 +49,8 @@ from app.services.tenant import tags as tags_service
 from app.services.tenant import task_checklist as checklist_service
 from app.services.tenant import task_completion
 from app.services.tenant import task_description as task_description_service
-from app.services.tenant import task_series
 from app.services.tenant import task_statuses as task_statuses_service
+from app.services.tenant import task_types as task_types_service
 from app.services.tenant.names import copy_name
 from app.services.tenant.task_completion import sync_completed_at
 
@@ -72,7 +80,9 @@ async def resolve_start_status(
     SELECT-only role and could not — so the first write is where a project that
     somehow arrived without its defaults gets them.
     """
-    await task_statuses_service.ensure_default_statuses(session, project_id)
+    await task_statuses_service.ensure_default_statuses(
+        session, project_id, locale=task_statuses_service.REPAIR_LOCALE
+    )
 
     if task_status_id is not None:
         selected = await task_statuses_service.get_project_status(
@@ -88,11 +98,96 @@ async def resolve_start_status(
     return await task_statuses_service.get_default_status(session, project_id)
 
 
+async def resolve_type_row(
+    session: AsyncSession,
+    *,
+    project_id: int,
+    task_type_id: Optional[int] = None,
+) -> TaskType:
+    """The type a task is: the one named, which must be this project's, or
+    the project's default."""
+    if task_type_id is None:
+        return await task_types_service.get_default_type(session, project_id)
+    found = await task_types_service.get_project_type(session, task_type_id, project_id)
+    if found is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=TaskMessages.TYPE_NOT_FOUND,
+        )
+    return found
+
+
+async def resolve_type(
+    session: AsyncSession,
+    *,
+    project_id: int,
+    task_type_id: Optional[int] = None,
+) -> int:
+    """:func:`resolve_type_row`'s id."""
+    found = await resolve_type_row(
+        session, project_id=project_id, task_type_id=task_type_id
+    )
+    assert found.id is not None
+    return found.id
+
+
+def start_from_type(
+    task_type: TaskType,
+    fields: dict[str, Any],
+    *,
+    sent: set[str],
+) -> list[str]:
+    """Fill ``fields`` (a new task's columns) with what its type starts a task
+    with, for each one whoever made it did not send (``sent`` names those it
+    did; one sent empty stays empty), and return the checklist lines it starts
+    with. A repeat starts only on a task with a date to count from, and only
+    one the task can have."""
+    starting = task_types_service.starting_values_of(task_type)
+    if starting is None:
+        return []
+    if starting.description and "description" not in sent:
+        fields["description"] = starting.description
+    if starting.priority is not None and "priority" not in sent:
+        fields["priority"] = starting.priority
+    if (
+        starting.recurrence
+        and "recurrence" not in sent
+        and (fields.get("due_date") or fields.get("start_date"))
+    ):
+        strategy = (
+            fields.get("recurrence_strategy")
+            if "recurrence_strategy" in sent or starting.recurrence_strategy is None
+            else starting.recurrence_strategy
+        )
+        try:
+            validate_task_recurrence(
+                rule=starting.recurrence,
+                strategy=strategy or RecurrenceStrategy.fixed,
+                limit=fields.get("recurrence_limit"),
+                due=fields.get("due_date"),
+            )
+        except ValueError:
+            pass
+        else:
+            fields["recurrence"] = starting.recurrence
+            if strategy is not None:
+                fields["recurrence_strategy"] = strategy
+    return list(starting.checklist)
+
+
+def starting_checklist(lines: list[str]) -> list[dict[str, Any]]:
+    """The stored checklist :func:`start_from_type`'s lines start a task with."""
+    return checklist_service.normalize(
+        [ChecklistItemInput(text=line) for line in lines]
+    )
+
+
 async def create_task_row(
     session: AsyncSession,
     *,
     project: Project,
     task_status_id: Optional[int] = None,
+    task_type_id: Optional[int] = None,
     now: Optional[datetime] = None,
     **fields: Any,
 ) -> Task:
@@ -114,6 +209,9 @@ async def create_task_row(
         project_id=project.id,
         position=await next_position(session, project.id),
         task_status_id=selected_status.id,
+        task_type_id=await resolve_type(
+            session, project_id=project.id, task_type_id=task_type_id
+        ),
     )
     sync_completed_at(
         task, selected_status.category, now=now or datetime.now(timezone.utc)
@@ -229,103 +327,6 @@ async def change_task_assignees(
     return added
 
 
-async def advance_recurrence_if_needed(
-    session: AsyncSession,
-    task: Task,
-    *,
-    previous_status_category: TaskStatusCategory | None,
-    now: datetime,
-    user_timezone: str | None,
-) -> bool:
-    current_category = task.task_status.category if task.task_status else None
-    if (
-        previous_status_category == TaskStatusCategory.done
-        or current_category != TaskStatusCategory.done
-        or not task.recurrence
-        or task.due_date is None
-    ):
-        return False
-
-    try:
-        dates = task_series.next_dates(task, now=now, user_timezone=user_timezone)
-    except ValueError:
-        return False
-    if dates is None:
-        task.recurrence = None
-        return False
-    new_start, next_due = dates
-
-    # An edit of just this task leaves the next one with what it changed from.
-    values = task_series.carried(task)
-    task.series_id = task.series_id or task.id
-    default_status = await task_statuses_service.get_default_status(
-        session, task.project_id
-    )
-    new_task = Task(
-        project_id=task.project_id,
-        task_status_id=default_status.id,
-        title=values.get("title", task.title),
-        description=values.get("description", task.description),
-        priority=values.get("priority", task.priority),
-        start_date=new_start,
-        due_date=next_due,
-        recurrence=task.recurrence,
-        recurrence_shift=task.recurrence_shift,
-        recurrence_strategy=task.recurrence_strategy or "fixed",
-        position=await next_position(session, task.project_id),
-        recurrence_occurrence_count=task.recurrence_occurrence_count + 1,
-        series_id=task.series_id,
-        created_by=task.created_by,
-        checklist=checklist_service.cloned(task.checklist),
-    )
-    sync_completed_at(new_task, default_status.category, now=now)
-    session.add(new_task)
-    await session.flush()
-    assignee_ids = values.get(
-        "assignee_ids", [assignee.id for assignee in task.assignees]
-    )
-    project = await session.get(Project, task.project_id)
-    if project is None:  # the task was just read inside it
-        raise RuntimeError("a recurring task's project is gone")
-    await set_task_assignees(
-        session, new_task, assignee_ids, project=project, carried=True
-    )
-    if "tag_ids" in values:
-        await task_series.retag(session, new_task.id, values["tag_ids"])
-    else:
-        await tags_service.copy_entity_tags(
-            session,
-            tags_service.TAG_LINKS["task"],
-            {task.id: new_task.id},
-        )
-    if new_task.description:
-        await task_description_service.record_references(
-            session, new_task, author_id=task.created_by
-        )
-    await session.flush()
-    # Reload through a select rather than ``session.refresh``: refresh takes no
-    # loader options, so the assignees would come back unloaded and the
-    # serializer would have to emit IO from sync context. ``populate_existing``
-    # applies the freshly loaded rows to the identity-mapped instance.
-    await session.exec(
-        select(Task)
-        .where(Task.id == new_task.id)
-        .options(
-            selectinload(Task.assignees),
-        )
-        .execution_options(populate_existing=True)
-    )
-    await tags_service.annotate_tags(session, [new_task])
-    await properties_service.annotate_properties(session, [new_task])
-
-    task.recurrence = None
-    task.recurrence_strategy = "fixed"
-    task.recurrence_carry = None
-    task.updated_at = now
-    session.add(task)
-    return True
-
-
 def _date_shift(
     template: Project,
     new_project: Project,
@@ -364,10 +365,12 @@ async def copy_project_tasks(
     *,
     status_mapping: dict[int, int],
     fallback_status_ids: dict[TaskStatusCategory, int],
+    type_mapping: dict[int, int],
+    fallback_type_id: int,
 ) -> list[Task]:
     """Copy every task of ``source`` into ``target``, a copy of it whose
-    statuses ``status_mapping`` maps, keeping titles and order; returns the
-    copies. Dates move onto the target's schedule (:func:`_date_shift`), and
+    statuses ``status_mapping`` maps and whose types ``type_mapping`` does,
+    keeping titles and order; returns the copies. Dates move onto the target's schedule (:func:`_date_shift`), and
     checklists keep their ticks only from a template, which is copied as
     written."""
     tasks = (
@@ -396,6 +399,7 @@ async def copy_project_tasks(
         tasks,
         target,
         status_of=status_of,
+        type_of=lambda task: type_mapping.get(task.task_type_id, fallback_type_id),
         date_shift=_date_shift(source, target, list(tasks)),
         keep_done=source.is_template,
     )
@@ -407,6 +411,7 @@ async def copy_tasks(
     target: Project,
     *,
     status_of: Callable[[Task], int | None] | None = None,
+    type_of: Callable[[Task], int] | None = None,
     date_shift: timedelta | None = None,
     keep_done: bool = False,
     assignees: set[int] | None = None,
@@ -418,7 +423,9 @@ async def copy_tasks(
     tags, the links (a link between two of the sources joins
     their copies) and, inside one initiative, the property values.
 
-    ``status_of`` gives each copy its status in another project. Without it
+    ``status_of`` gives each copy its status in another project, and
+    ``type_of`` its type; without them the copies keep their sources'. Without
+    ``status_of``
     the copies go beside their sources: the same status, named
     "<title> (Copy)", at the end of the list. Checklists start unticked unless
     ``keep_done``.
@@ -435,16 +442,24 @@ async def copy_tasks(
             source.due_date,
             source.recurrence,
         )
+        anchor = source.recurrence_anchor
         if date_shift is not None:
             shift = date_shift
             if repeat and (due_date or start_date):
                 # A series moves on its own rule, from its due date or its
                 # start without one, and its dates move with its start.
-                start = due_date or start_date
+                start = anchor or due_date or start_date
                 series = recurrence.moved(
-                    repeat, start, source.recurrence_shift, date_shift
+                    repeat,
+                    start,
+                    source.recurrence_shift,
+                    date_shift,
+                    occurrences=[due_date or start_date],
                 )
-                repeat, shift = series.text, series.start - start
+                repeat = series.text
+                anchor = series.start
+                original = due_date or start_date
+                shift = series.occurrences[original] - original
             start_date = start_date + shift if start_date else None
             due_date = due_date + shift if due_date else None
         copy = Task(
@@ -452,12 +467,16 @@ async def copy_tasks(
             title=copy_name(source.title) if beside else source.title,
             description=source.description,
             task_status_id=status_id,
+            task_type_id=source.task_type_id if type_of is None else type_of(source),
             priority=source.priority,
             start_date=start_date,
             due_date=due_date,
             recurrence=repeat,
             recurrence_shift=source.recurrence_shift,
+            recurrence_anchor=anchor,
+            recurrence_anchor_count=source.recurrence_anchor_count,
             recurrence_strategy=source.recurrence_strategy,
+            recurrence_limit=source.recurrence_limit,
             position=end + index if beside else source.position,
             checklist=checklist_service.cloned(source.checklist, keep_done=keep_done),
         )

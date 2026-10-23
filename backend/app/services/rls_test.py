@@ -6,11 +6,14 @@ Tests cover:
 """
 
 import pytest
+from sqlalchemy import func
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import GuildAccessError
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.initiative import DEFAULT_PERMISSION_VALUES, PermissionKey
+from app.models.tenant.project import Project
 from app.models.platform.user import UserRole
 from app.services.rls import (
     check_initiative_permission,
@@ -21,8 +24,10 @@ from app.testing import (
     create_guild_membership,
     create_initiative,
     create_initiative_member,
+    create_project,
     create_user,
     route_as,
+    route_system,
 )
 
 
@@ -240,3 +245,32 @@ async def test_check_initiative_permission_non_member(session: AsyncSession):
     # membership row nor a live grant, before any question about an initiative.
     with pytest.raises(GuildAccessError):
         await route_as(session, user_id=outsider.id, guild_id=guild.id)
+
+
+# ---------------------------------------------------------------------------
+# Who the system engine reads as
+# ---------------------------------------------------------------------------
+
+
+async def test_a_member_routed_on_the_system_login_reads_as_themselves(
+    session: AsyncSession, role_session
+):
+    """On the system engine's login, a member routed through the seam reads
+    what their own standing gives them; the same connection with nobody routed
+    reads the whole community."""
+    owner = await create_user(session)
+    guild = await create_guild(session, creator=owner)
+    initiative = await create_initiative(session, guild, owner)
+    await create_project(session, initiative, owner)
+    member = await create_user(session)
+    await create_guild_membership(session, user=member, guild=guild)
+
+    system = await role_session("app_admin")
+    projects = select(func.count()).select_from(Project)
+
+    await route_as(system, user_id=member.id, guild_id=guild.id, on_behalf=True)
+    assert (await system.exec(projects)).one() == 0
+    await route_as(system, user_id=owner.id, guild_id=guild.id, on_behalf=True)
+    assert (await system.exec(projects)).one() == 1
+    await route_system(system, guild_id=guild.id)
+    assert (await system.exec(projects)).one() == 1

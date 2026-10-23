@@ -19,6 +19,7 @@ import type {
   TaskRead,
   TaskReorderRequest,
   TaskStatusRead,
+  TaskUpdate,
 } from "@/api/generated/initiativeAPI.schemas";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
 import {
@@ -36,6 +37,7 @@ import { ToolListToolbar } from "@/components/initiativeTools/shared/ToolListToo
 import { ToolPresetSelect } from "@/components/initiativeTools/shared/ToolPresetSelect";
 import { AddItemDialog } from "@/components/layouts/AddItemDialog";
 import { useRegisterPrimaryCreateAction } from "@/components/navigation/CreateActionContext";
+import { ProjectTasksGanttView } from "@/components/projects/ProjectTasksGanttView";
 import { ProjectTasksKanbanView } from "@/components/projects/ProjectTasksKanbanView";
 import { ProjectTasksTableView } from "@/components/projects/ProjectTasksTableView";
 import { listLayoutLooks } from "@/components/projects/projectTasksConfig";
@@ -60,7 +62,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAuth } from "@/hooks/useAuth";
 import { useColumnLimits } from "@/hooks/useColumnLimits";
+import { useFieldCatalog } from "@/hooks/useFieldCatalog";
 import { useInitiative } from "@/hooks/useInitiatives";
+import { useProjectTaskTypes } from "@/hooks/useProjects";
 import {
   type ProjectViewSearch,
   taskViewSorting,
@@ -85,6 +89,8 @@ import {
   matchesDueWindow,
   taskFilterCount,
 } from "@/lib/filters/taskFilters";
+import { isGanttScale } from "@/lib/gantt";
+import { activeGrouping, catalogChoices } from "@/lib/layouts/grouping";
 import { presetName } from "@/lib/layouts/presets";
 import { blankTask, TASK_DETAIL } from "@/lib/layouts/taskLayout";
 import type { LayoutNode } from "@/lib/layouts/tree";
@@ -155,10 +161,11 @@ export const ProjectTasksSection = ({
     setSorting,
     pickPreset,
     rememberLayout,
-    mode: calendarMode,
-    setMode: setCalendarMode,
+    mode,
+    setMode,
     grouping,
     setGrouping,
+    exportFields,
   } = useProjectTaskView({ projectId, taskStatuses, search });
 
   /** Show the `next` list layout, and come back to it. The URL names it, so
@@ -247,23 +254,42 @@ export const ProjectTasksSection = ({
   // own sort while it is showing, and the project's order in every other
   // layout.
   const tableState = useProjectTaskTableState(grouping, setGrouping, sorting, setSorting);
-  const exportSorting = useMemo(() => {
+  // What an export carries of this person's view: its order, what it is
+  // grouped by less the groups the layout leaves out, the table's columns and
+  // the task page's parts.
+  const { groupings: groupingCatalog } = useFieldCatalog("tasks");
+  const exportView = useMemo(() => {
     const fields = taskViewSorting(kind, sorting);
-    return fields.length > 0 ? { sorting: fields, tz: browserTimezone() } : {};
-  }, [kind, sorting]);
+    const grouped = activeGrouping(
+      layout?.definition.groupings,
+      kind,
+      grouping,
+      catalogChoices(groupingCatalog)
+    );
+    return {
+      ...(fields.length > 0 && { sorting: fields }),
+      ...(grouped && {
+        group_by: grouped.field,
+        bucket: grouped.bucket,
+        hidden_groups: grouped.hidden,
+      }),
+      columns: exportFields.columns,
+      detail: exportFields.detail,
+      tz: browserTimezone(),
+    };
+  }, [kind, sorting, grouping, layout, groupingCatalog, exportFields]);
   const [isBulkEditDialogOpen, setIsBulkEditDialogOpen] = useState(false);
   const [isBulkEditTagsDialogOpen, setIsBulkEditTagsDialogOpen] = useState(false);
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
   const [archiveDialogStatusId, setArchiveDialogStatusId] = useState<number | undefined>(undefined);
   const lastKanbanOverRef = useRef<DragOverEvent["over"] | null>(null);
 
-  // Calendar view state
   const { user } = useAuth();
   const weekStartsOn = (user?.week_starts_on ?? 0) as 0 | 1 | 2 | 3 | 4 | 5 | 6;
-  // The chosen sub-view (day/week/month/...) is part of this person's view
-  // of the project.
-  const calendarViewMode = (calendarMode ?? "month") as CalendarViewMode;
-  const setCalendarViewMode = setCalendarMode as (next: CalendarViewMode) => void;
+  // How much of the calendar the Gantt or the calendar shows is one choice in
+  // this person's view of the project.
+  const ganttScale = isGanttScale(mode) ? mode : "week";
+  const calendarViewMode = (mode ?? "month") as CalendarViewMode;
   const [calendarFocusDate, setCalendarFocusDate] = useState(() => new Date());
 
   // Fetch tasks with server-side filtering (page_size=0 fetches all for
@@ -375,6 +401,9 @@ export const ProjectTasksSection = ({
     projectDefault && columnLimits.isFull(projectDefault.id)
       ? (sortedTaskStatuses.find((status) => !columnLimits.isFull(status.id)) ?? projectDefault)
       : projectDefault;
+  // And of the project's default type unless another is picked.
+  const taskTypes = useProjectTaskTypes(projectId).data;
+  const defaultType = taskTypes?.find((type) => type.is_default) ?? taskTypes?.[0];
   const leaving = useRef(false);
   const neverAsks = useCallback(async () => null, []);
 
@@ -448,9 +477,8 @@ export const ProjectTasksSection = ({
     },
   });
 
-  // Calendar drag-reschedule: patches the local list so the entry moves
-  // immediately, but stays silent (no per-drag toast), matching the initiative
-  // calendar's reschedule UX.
+  // A Gantt bar dragged: patches the local list so the bar stays where it was
+  // dropped, and stays silent (no per-drag toast), as the calendars do.
   const rescheduleTaskDates = useUpdateTask({
     onSuccess: applyTaskUpdateToLocal,
   });
@@ -558,39 +586,50 @@ export const ProjectTasksSection = ({
   // Filtering is entirely server-side now.
   const statusFilteredTasks = tasks;
 
-  // Map tasks to CalendarEntry[] for the generic CalendarView. Shares the
-  // helper used by the initiative calendar so start/due markers, same-day
-  // spans, tags, and drag-to-reschedule behave identically.
-  const calendarEntries = useMemo(() => {
-    const entries: CalendarEntry[] = [];
-    statusFilteredTasks.forEach((task) => {
-      entries.push(
-        ...buildTaskCalendarEntries(task, getProjectColor(task.project_id), canEditTaskDetails)
-      );
-    });
-    return entries;
-  }, [statusFilteredTasks, canEditTaskDetails]);
-
-  // Drag-to-reschedule on the calendar. Uses the silent date-update mutation
-  // (patches the local list so the dropped entry moves immediately, no toast).
-  // A start/due marker patches only that field; a same-day span shifts both
-  // endpoints (CalendarView preserved the duration). A repeating task asks
-  // whether the tasks after it move too.
+  // New dates from the Gantt or the calendar. A repeating task asks whether
+  // the tasks after it move too.
   const scopePrompt = useScopePrompt();
-  const handleCalendarReschedule = useCallback(
-    async ({ entry, startAt, endAt }: CalendarEntryReschedule) => {
-      const meta = entry.meta as Partial<TaskEntryMeta> | undefined;
-      if (meta?.type !== "task" || !meta.taskId) return;
-      const scope = meta.repeating
+  const { mutateAsync: writeTaskDates } = rescheduleTaskDates;
+  const rescheduleTask = useCallback(
+    async (
+      task: Pick<TaskListRead, "id" | "recurrence">,
+      dates: Pick<TaskUpdate, "start_date" | "due_date">
+    ) => {
+      const scope = task.recurrence
         ? await scopePrompt.ask("edit", { tool: "tasks", scopes: ["this", "following"] })
         : undefined;
-      if (scope === null) return;
-      rescheduleTaskDates.mutate({
-        taskId: meta.taskId,
-        data: { ...rescheduledDates(meta.kind, startAt, endAt), ...(scope ? { scope } : {}) },
-      });
+      if (scope === null) return false;
+      return writeTaskDates({
+        taskId: task.id,
+        data: { ...dates, ...(scope ? { scope } : {}) },
+      }).then(
+        () => true,
+        // The mutation says what went wrong; the bar goes back.
+        () => false
+      );
     },
-    [rescheduleTaskDates, scopePrompt.ask]
+    [writeTaskDates, scopePrompt.ask]
+  );
+
+  // The calendar draws tasks as every calendar does: start and due markers,
+  // a same-day span, its tags and its type.
+  const typed = (taskTypes?.length ?? 0) > 1;
+  const calendarEntries = useMemo(
+    () =>
+      statusFilteredTasks.flatMap((task): CalendarEntry[] =>
+        buildTaskCalendarEntries(task, getProjectColor(task.project_id), canEditTaskDetails, {
+          typed,
+        })
+      ),
+    [statusFilteredTasks, canEditTaskDetails, typed]
+  );
+  const handleCalendarReschedule = useCallback(
+    ({ entry, startAt, endAt }: CalendarEntryReschedule) => {
+      const meta = entry.meta as Partial<TaskEntryMeta> | undefined;
+      const task = meta?.type === "task" ? tasks.find((each) => each.id === meta.taskId) : null;
+      if (task) void rescheduleTask(task, rescheduledDates(meta?.kind, startAt, endAt));
+    },
+    [tasks, rescheduleTask]
   );
 
   // Count of archivable done tasks (non-archived tasks in done category)
@@ -894,7 +933,7 @@ export const ProjectTasksSection = ({
                 params={{
                   conditions: buildTaskConditions(appliedSpec, { projectId }),
                   include_archived: appliedSpec.include_archived,
-                  ...exportSorting,
+                  ...exportView,
                 }}
                 resumePending
               />
@@ -947,6 +986,7 @@ export const ProjectTasksSection = ({
               kind: "project",
               memberScope: { type: "canOpen", tool: Tool.project, id: projectId },
               statuses: sortedTaskStatuses,
+              types: taskTypes,
             }}
             value={appliedSpec}
             onChange={setFilters}
@@ -959,6 +999,7 @@ export const ProjectTasksSection = ({
             initiativeId={initiativeId}
             taskStatuses={sortedTaskStatuses}
             groupedTasks={groupedTasks}
+            listParams={taskListParams}
             collapsedStatusIds={collapsedStatuses}
             canReorderTasks={canReorderTasks}
             canEditTasks={canEditTaskDetails}
@@ -1003,7 +1044,7 @@ export const ProjectTasksSection = ({
                         // Selection came from the visible list, which may include
                         // archived rows when the toggle is on.
                         include_archived: appliedSpec.include_archived,
-                        ...exportSorting,
+                        ...exportView,
                       }
                 }
                 onEdit={() => setIsBulkEditDialogOpen(true)}
@@ -1026,6 +1067,7 @@ export const ProjectTasksSection = ({
                 projectId={projectId}
                 initiativeId={initiativeId}
                 tasks={statusFilteredTasks}
+                listParams={taskListParams}
                 taskStatuses={sortedTaskStatuses}
                 sensors={listSensors}
                 canReorderTasks={canReorderTasks}
@@ -1064,11 +1106,27 @@ export const ProjectTasksSection = ({
             )}
           </div>
         ) : null}
+        {kind === "gantt" ? (
+          <ProjectTasksGanttView
+            initiativeId={initiativeId}
+            projectId={projectId}
+            tasks={statusFilteredTasks}
+            taskStatuses={sortedTaskStatuses}
+            listParams={taskListParams}
+            scale={ganttScale}
+            onScaleChange={setMode}
+            grouping={grouping}
+            onGroupingChange={setGrouping}
+            viewGroupings={layout?.definition.groupings}
+            taskHref={taskHref}
+            onReschedule={canEditTaskDetails ? rescheduleTask : undefined}
+          />
+        ) : null}
         {kind === "calendar" ? (
           <CalendarView
             entries={calendarEntries}
             viewMode={calendarViewMode}
-            onViewModeChange={setCalendarViewMode}
+            onViewModeChange={setMode}
             focusDate={calendarFocusDate}
             onFocusDateChange={setCalendarFocusDate}
             onEntryClick={(entry) => {
@@ -1085,16 +1143,17 @@ export const ProjectTasksSection = ({
         <>
           {/* Mounted once the columns' counts are in, so a new task starts in
               a column that isn't full. */}
-          {canAddTasks && defaultStatus && columnLimits.ready ? (
+          {canAddTasks && defaultStatus && defaultType && columnLimits.ready ? (
             <AddItemDialog
               open={isComposerOpen}
               onOpenChange={setIsComposerOpen}
               detail={TASK_DETAIL}
-              blank={blankTask(projectId, defaultStatus)}
+              blank={blankTask(projectId, defaultStatus, defaultType)}
               context={{
                 readOnly: false,
                 readOnlyMessage: null,
                 statuses: sortedTaskStatuses,
+                types: taskTypes ?? [],
                 isFull: columnLimits.isFull,
                 initiativeId,
                 currentUserId: user?.id,
@@ -1109,6 +1168,7 @@ export const ProjectTasksSection = ({
                 createTask.mutateAsync({
                   project_id: projectId,
                   task_status_id: item.task_status_id,
+                  task_type_id: item.task_type_id,
                   priority: item.priority,
                   ...fields,
                   properties,

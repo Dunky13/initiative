@@ -87,6 +87,7 @@ from app.schemas.tenant.guild_plugin import (
     CommunityPluginConsentSummary,
     CommunityPluginDecline,
     CommunityPluginDetail,
+    CommunityPluginEntitlementRead,
     CommunityPluginHandoff,
     CommunityPluginInstall,
     CommunityPluginListResponse,
@@ -373,6 +374,21 @@ async def _read(
     )
 
 
+async def _entitlement(
+    guild_id: int, listing_uid: Optional[str]
+) -> Optional[CommunityPluginEntitlementRead]:
+    """What the statement held for the install's listing says, if one is."""
+    if not listing_uid:
+        return None
+    statement = await plugin_entitlements.read_statement(guild_id, listing_uid)
+    if statement is None:
+        return None
+    return CommunityPluginEntitlementRead(
+        active=plugin_entitlements.statement_active(statement.values),
+        reason=plugin_entitlements.statement_reason(statement.values),
+    )
+
+
 async def _detail(
     session: AsyncSession,
     plugin: GuildPlugin,
@@ -408,6 +424,7 @@ async def _detail(
             session, install_id=plugin.id, user_id=user_id
         ),
         listing=await catalog_service.get_listing_by_uid(session, plugin.listing_uid),
+        entitlement=await _entitlement(context.guild_id, plugin.listing_uid),
     )
 
 
@@ -898,7 +915,7 @@ async def read_uninstall_notice(
     notice = await billing_ping.plugin_uninstall_notice(
         guild_context.guild_id, listing_uid=listing_uid, locale=locale
     )
-    fallback = plugin_entitlements.action_url(guild_context.guild_id, listing_uid)
+    fallback = plugin_entitlements.action_url(listing_uid)
     if notice is None:
         return CommunityPluginUninstallNotice(managed=True, action_url=fallback)
     return CommunityPluginUninstallNotice(

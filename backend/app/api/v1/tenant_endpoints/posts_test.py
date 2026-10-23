@@ -129,6 +129,59 @@ async def test_create_post(client: AsyncClient, board: Actor):
     assert body["excerpt"] == "We are upgrading at 9am."
 
 
+@pytest.mark.parametrize("field", ["scheduled_for", "poll"])
+async def test_create_post_requires_offset_for_instants(client, board, field):
+    payload = {"name": "With a deadline", "initiative_id": board.initiative.id}
+    if field == "poll":
+        payload[field] = {
+            "options": [{"text": "Yes"}, {"text": "No"}],
+            "closes_at": "2099-10-20T12:00:00",
+        }
+    else:
+        payload[field] = "2099-10-20T12:00:00"
+    response = await client.post(
+        board.g("/posts/"), headers=board.headers, json=payload
+    )
+    assert response.status_code == 422, response.text
+
+
+async def test_pin_requires_offset_for_expiry(client, session, board):
+    post = await create_post(session, board.initiative, board.user)
+    response = await client.put(
+        board.g(f"/posts/{post.id}/pin"),
+        headers=board.headers,
+        json={"pinned": True, "expires_at": "2099-10-20T12:00:00"},
+    )
+    assert response.status_code == 422, response.text
+
+
+async def test_post_schedule_update_requires_offset(client, session, board):
+    post = await _draft(session, board)
+    response = await client.patch(
+        board.g(f"/posts/{post.id}"),
+        headers=board.headers,
+        json={"scheduled_for": "2099-10-20T12:00:00"},
+    )
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("offset", ["Z", "+02:00"])
+async def test_post_schedule_accepts_explicit_offset(client, board, offset):
+    response = await client.post(
+        board.g("/posts/"),
+        headers=board.headers,
+        json={
+            "name": "Scheduled",
+            "initiative_id": board.initiative.id,
+            "scheduled_for": f"2099-10-20T12:00:00{offset}",
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert datetime.fromisoformat(
+        response.json()["scheduled_for"]
+    ) == datetime.fromisoformat(f"2099-10-20T12:00:00{offset}")
+
+
 async def test_create_requires_feature_enabled(
     client: AsyncClient, acting_user, session
 ):

@@ -77,6 +77,8 @@ class QueryColumn:
     type: FieldType
     #: The period the column is rounded to (``date_trunc``'s unit), or ``None``.
     grain: str | None = None
+    #: SQL DATE values retain their calendar day when rendered in any zone.
+    date_only: bool = False
 
 
 #: What a Postgres type is, in the vocabulary the field registry already uses.
@@ -179,6 +181,7 @@ async def _described(
                 else _column_type(attribute, enum_oids)
             ),
             grain=grains[position] if position < len(grains) else None,
+            date_only=attribute.type.name == "date",
         )
         for position, attribute in enumerate(attributes)
     )

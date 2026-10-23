@@ -1,5 +1,13 @@
 import { format } from "date-fns";
-import { type ReactNode, type RefObject, useContext, useMemo } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -7,6 +15,7 @@ import {
   type TaskPriority,
   type TaskRead,
   type TaskStatusRead,
+  type TaskTypeRead,
   type TaskUpdate,
   Tool,
 } from "@/api/generated/initiativeAPI.schemas";
@@ -14,9 +23,11 @@ import { CommentSection } from "@/components/comments/CommentSection";
 import { MemberMultiSelect } from "@/components/members/MemberSearchSelect";
 import type { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
 import { RecurrenceEditor } from "@/components/recurrence/RecurrenceEditor";
+import { PART_MARK, SmartTitleParts } from "@/components/tasks/SmartTitleParts";
 import { TaskChecklist } from "@/components/tasks/TaskChecklist";
 import { TaskPriorityOption } from "@/components/tasks/TaskPriorityOption";
 import { statusTriggerStyle, TaskStatusOption } from "@/components/tasks/TaskStatusOption";
+import { TaskTypeOption } from "@/components/tasks/TaskTypeOption";
 import { CasePanel } from "@/components/tickets/CasePanel";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
@@ -29,11 +40,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAIEnabled } from "@/hooks/useAIEnabled";
 import { useComments, useCommentsCache, useCommentThreadState } from "@/hooks/useComments";
 import { useDateLocale } from "@/hooks/useDateLocale";
-import { ItemDraftContext } from "@/hooks/useFieldSave";
+import { ItemDraftContext, type ItemEdit } from "@/hooks/useFieldSave";
 import { useRelativeTime } from "@/hooks/useRelativeTime";
+import { useSmartTitle, useSmartTitlesOn } from "@/hooks/useSmartTitle";
 import {
   TASK_SAVES,
   type TaskEdit,
@@ -43,8 +56,15 @@ import {
 } from "@/hooks/useTasks";
 import { dateRangeBounds } from "@/lib/dateRange";
 import { toast } from "@/lib/mascotToast";
-import { fromStored, type RecurrenceRule, rulePayload } from "@/lib/recurrence";
+import {
+  fromStored,
+  isHourlyRule,
+  isValidTaskRecurrence,
+  rulePayload,
+  type TaskRecurrenceValue,
+} from "@/lib/recurrence";
 import { referenceRef } from "@/lib/smartChips";
+import { type Applied, NOTHING_APPLIED, readingEdit } from "@/lib/smartTaskTitle";
 import { PRIORITY_ORDER } from "@/lib/sorting";
 import { dateTimePattern } from "@/lib/timeFormat";
 import { taskRoute } from "@/lib/tools";
@@ -58,7 +78,7 @@ import {
 import { type DetailKind, useItemContext } from "./DetailLayoutView";
 import { FieldFrame, sameIds, sameJson, useFieldDraft } from "./editing";
 import { DescriptionField, TagsField, TitleField } from "./fieldEditors";
-import { TASK_LAYOUT, taskFields } from "./tasks";
+import { TASK_LAYOUT, taskFields, taskLayoutFor } from "./tasks";
 
 /** What the task's detail shares with its parts, beside the task itself. */
 export interface TaskLayoutContext {
@@ -68,6 +88,8 @@ export interface TaskLayoutContext {
   readOnlyMessage: string | null;
   /** The project's statuses, which the task's own joins when the project dropped it. */
   statuses: TaskStatusRead[];
+  /** The project's task types. One alone is not shown: it tells nothing apart. */
+  types: TaskTypeRead[];
   /** Whether a column takes one more task; left out where none is limited. */
   isFull?: (taskStatusId: number) => boolean;
   initiativeId: number | null;
@@ -86,8 +108,15 @@ const useTaskLayout = useItemContext<TaskLayoutContext>;
 
 type EditorProps = { item: TaskRead; label: string };
 
-/** The task's title, which is the detail's heading. */
-const TitleEditor = ({ item: task, label }: EditorProps) => {
+/** The task's title, which is the detail's heading. One being added is read
+ *  for its details where the reader has that on. */
+const TitleEditor = (props: EditorProps) => {
+  const adding = useContext(ItemDraftContext) !== null;
+  const smart = useSmartTitlesOn();
+  return adding && smart ? <SmartTitleEditor {...props} /> : <PlainTitleEditor {...props} />;
+};
+
+const PlainTitleEditor = ({ item: task, label }: EditorProps) => {
   const { t } = useTranslation("tasks");
   const { readOnly, askScope } = useTaskLayout();
   return (
@@ -98,6 +127,64 @@ const TitleEditor = ({ item: task, label }: EditorProps) => {
       save={useTaskFieldSave(task, label, askScope)}
       readOnly={readOnly}
       placeholder={t("taskForm.titlePlaceholder")}
+    />
+  );
+};
+
+/**
+ * The title of a task being added, read as it is typed: the due date, repeat,
+ * priority, tags and people it names are set on the task's own fields, marked
+ * in the title and listed under it, and the title is added without them.
+ */
+const SmartTitleEditor = ({ item: task, label }: EditorProps) => {
+  const { t } = useTranslation("tasks");
+  const { readOnly, askScope } = useTaskLayout();
+  const drafting = useContext(ItemDraftContext);
+  const save = useTaskFieldSave(task, label, askScope);
+  // The field shows the title as typed; the task is added as it reads.
+  const smart = useSmartTitle({
+    text: task.title,
+    communityId: useActiveCommunityId(),
+    projectId: task.project_id,
+    enabled: true,
+  });
+  const applied = useRef<Applied>({ ...NOTHING_APPLIED, title: task.title });
+  const latest = useRef(task);
+  latest.current = task;
+  // A reading that moved — the title typed on, a name looked up, a part kept —
+  // sets what it says on the task's fields.
+  useEffect(() => {
+    if (!smart.reading || !drafting) return;
+    const { edit, applied: next } = readingEdit(latest.current, smart.reading, applied.current);
+    applied.current = next;
+    if (edit) drafting.edit(edit as ItemEdit<unknown, unknown>);
+  }, [smart.reading, drafting]);
+  // Add can follow a change in the same event (Enter), before the reading
+  // above has run, so each change already sends the title as it reads.
+  const titleSave: typeof save = {
+    ...save,
+    save: (edit, undo) => {
+      if (!("patch" in edit) || typeof edit.patch.title !== "string") return save.save(edit, undo);
+      const title = smart.read(edit.patch.title).title;
+      applied.current = { ...applied.current, title };
+      return save.save({ patch: { ...edit.patch, title }, shows: edit.shows }, undo);
+    },
+  };
+  const parts = smart.reading?.parts ?? [];
+  return (
+    <TitleField
+      id="task-title"
+      label={label}
+      value={task.title}
+      save={titleSave}
+      readOnly={readOnly}
+      placeholder={t("taskForm.titlePlaceholder")}
+      marks={parts.map((part) => ({ ...part, className: PART_MARK[part.type] }))}
+      below={<SmartTitleParts reading={smart.reading} onKeep={smart.keep} className="px-3 pt-1" />}
+      mention={{
+        members: { type: "canOpen", tool: Tool.project, id: task.project_id },
+        onPick: smart.picked,
+      }}
     />
   );
 };
@@ -130,9 +217,17 @@ const DescriptionEditor = ({ item: task, label }: EditorProps) => {
           ? {
               label: t("edit.aiGenerate"),
               run: async () => {
-                const { description } = await generate.mutateAsync(task.id);
-                toast.success(t("edit.descriptionGenerated"));
-                return description;
+                const written = await generate.mutateAsync(task.id);
+                toast.success(t("edit.descriptionGenerated"), {
+                  description:
+                    written.comments_read < written.comments_total
+                      ? t("ai.fromComments", {
+                          read: written.comments_read,
+                          count: written.comments_total,
+                        })
+                      : undefined,
+                });
+                return written.description;
               },
             }
           : undefined
@@ -186,6 +281,73 @@ const StatusEditor = ({ task }: { task: TaskRead }) => {
               </SelectItem>
             );
           })}
+        </SelectContent>
+      </Select>
+    </FieldFrame>
+  );
+};
+
+/** What a new task of `type` starts with where it is drawn: its description
+ *  outline and its priority. (Its checklist lines and repeat are added by the
+ *  server when it is made.) */
+const startsWith = (type: TaskTypeRead) => ({
+  description: type.starting_values?.description ?? null,
+  priority: type.starting_values?.priority ?? "medium",
+});
+
+/** What a task being added takes from `type` in place of what it took from
+ *  `was`: each of the fields above the person has left as it started. */
+const startedFrom = (task: TaskRead, was: TaskTypeRead, type: TaskTypeRead) => {
+  const before = startsWith(was);
+  const after = startsWith(type);
+  return {
+    ...((task.description ?? "") === (before.description ?? "")
+      ? { description: after.description }
+      : {}),
+    ...(task.priority === before.priority ? { priority: after.priority } : {}),
+  };
+};
+
+/** Which of the project's types the task is. Changing it redraws the page as
+ *  the new type lays it out; nothing the task holds is lost, only what the new
+ *  page leaves out is not shown. While the task is being added, what it starts
+ *  with follows the type, until the person changes it. */
+const TypeEditor = ({ item: task, label }: EditorProps) => {
+  const { readOnly, types, askScope } = useTaskLayout();
+  const save = useTaskFieldSave(task, label, askScope);
+  const adding = useContext(ItemDraftContext) !== null;
+  if (types.length < 2) return null;
+  const options = types.some((type) => type.id === task.task_type_id)
+    ? types
+    : [...types, task.task_type];
+  const edit = (type: TaskTypeRead): TaskEdit => {
+    const started = adding ? startedFrom(task, task.task_type, type) : {};
+    return {
+      patch: { task_type_id: type.id, ...started },
+      shows: { task_type_id: type.id, task_type: type, ...started },
+    };
+  };
+  return (
+    <FieldFrame label={label} htmlFor="task-type" save={save}>
+      <Select
+        value={String(task.task_type_id)}
+        onValueChange={(selected) => {
+          const next = options.find((type) => String(type.id) === selected);
+          if (next && next.id !== task.task_type_id) {
+            void save.save(edit(next), edit(task.task_type));
+          }
+        }}
+        disabled={readOnly}
+      >
+        <SelectTrigger id="task-type">
+          <TaskTypeOption type={task.task_type} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((type) => (
+            <SelectItem key={type.id} value={String(type.id)}>
+              <TaskTypeOption type={type} />
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
     </FieldFrame>
@@ -350,22 +512,33 @@ const DatesEditor = ({ task }: { task: TaskRead }) => {
   );
 };
 
-type Repeat = { rule: RecurrenceRule | "custom" | null; strategy: TaskRead["recurrence_strategy"] };
+type Repeat = TaskRecurrenceValue;
 
 const TaskRecurrenceEditor = ({ item: task, label }: EditorProps) => {
   const { readOnly, askScope } = useTaskLayout();
   const save = useTaskFieldSave(task, label, askScope);
   const start = task.due_date ?? task.start_date;
   const saved: Repeat = {
-    rule: fromStored(task.recurrence, start, task.recurrence_shift),
+    rule: fromStored(
+      task.recurrence,
+      start,
+      task.recurrence_shift,
+      false,
+      task.recurrence_strategy === "rolling"
+    ),
     strategy: task.recurrence_strategy ?? "fixed",
+    limit: task.recurrence_limit ?? null,
   };
-  const edit = ({ rule, strategy }: Repeat): TaskEdit => ({
-    patch: { ...rulePayload(rule), recurrence_strategy: rule ? strategy : "fixed" },
+  const edit = ({ rule, strategy, limit }: Repeat): TaskEdit => ({
+    patch: {
+      ...rulePayload(rule),
+      recurrence_strategy: rule ? strategy : "fixed",
+      recurrence_limit: rule && strategy === "rolling" && isHourlyRule(rule) ? limit : null,
+    },
     // The stored rule is the server's to work out from the zone it is sent with.
     shows: rule
-      ? { recurrence_strategy: strategy }
-      : { recurrence: null, recurrence_strategy: "fixed" },
+      ? { recurrence_strategy: strategy, recurrence_limit: limit }
+      : { recurrence: null, recurrence_strategy: "fixed", recurrence_limit: null },
   });
   // A rule this editor cannot show cannot be sent back, so only a rule it can
   // is offered back after it is removed.
@@ -377,12 +550,28 @@ const TaskRecurrenceEditor = ({ item: task, label }: EditorProps) => {
         repeat.rule === null && saved.rule !== "custom"
           ? {
               ...edit(saved),
-              shows: { recurrence: task.recurrence, recurrence_strategy: saved.strategy },
+              shows: {
+                recurrence: task.recurrence,
+                recurrence_strategy: saved.strategy,
+                recurrence_limit: saved.limit,
+              },
             }
           : undefined
       ),
-    sameJson
+    sameJson,
+    (repeat) =>
+      isValidTaskRecurrence(repeat) && (!isHourlyRule(repeat.rule) || Boolean(task.due_date))
   );
+  // Adding the first due date also releases an hourly repeat held until then.
+  const revalidateDueDate = useEffectEvent(() => {
+    if (isHourlyRule(draft.value.rule)) {
+      draft.change(draft.value);
+      draft.finish();
+    }
+  });
+  useEffect(() => {
+    revalidateDueDate();
+  }, [task.due_date]);
   return (
     <FieldFrame label={label} hideLabel save={save} changed={draft.changed} keys={draft.keys}>
       <RecurrenceEditor
@@ -390,7 +579,9 @@ const TaskRecurrenceEditor = ({ item: task, label }: EditorProps) => {
         value={draft.value.rule}
         onChange={(rule) => draft.edit({ ...draft.value, rule })}
         strategy={draft.value.strategy}
-        onStrategyChange={(strategy) => draft.edit({ ...draft.value, strategy })}
+        limit={draft.value.limit}
+        onTaskChange={draft.edit}
+        hasDueDate={Boolean(task.due_date)}
         disabled={readOnly}
         referenceDate={start}
         stored={task.recurrence ? { rule: task.recurrence, shift: task.recurrence_shift } : null}
@@ -498,10 +689,16 @@ const Comments = ({ task }: { task: TaskRead }) => {
  *  addressed inside its project, so that is the tool its links refresh. */
 export const TASK_DETAIL: DetailKind<TaskRead, TaskLayoutContext, TaskUpdate> = {
   spec: TASK_LAYOUT,
+  // Each type of task has its own page, drawn as its shape until it is changed.
+  typed: {
+    typeOf: (task) => task.task_type_id,
+    spec: (task) => taskLayoutFor(task.task_type?.layout_preset),
+  },
   fields: taskFields,
   namespaces: ["projects"],
   editors: {
     title: TitleEditor,
+    type: TypeEditor,
     description: DescriptionEditor,
     assignees: AssigneesEditor,
     priority: PriorityEditor,
@@ -534,25 +731,33 @@ export const TASK_DETAIL: DetailKind<TaskRead, TaskLayoutContext, TaskUpdate> = 
   addingParts: ["status", "dates"],
 };
 
-/** A task not yet added to `projectId`, in `status`, as its detail draws it
- *  while it is. */
-export const blankTask = (projectId: number, status: TaskStatusRead): TaskRead => ({
+/** A task not yet added to `projectId`, in `status` and of `type`, as its
+ *  detail draws it while it is. */
+export const blankTask = (
+  projectId: number,
+  status: TaskStatusRead,
+  type: TaskTypeRead
+): TaskRead => ({
   id: 0,
   project_id: projectId,
   title: "",
-  description: null,
-  priority: "medium",
+  ...startsWith(type),
   start_date: null,
   due_date: null,
   recurrence: null,
   recurrence_strategy: "fixed",
+  recurrence_limit: null,
   recurrence_occurrence_count: 0,
   recurrence_shift: 0,
+  recurrence_anchor: null,
+  recurrence_anchor_count: 0,
   recurrence_until: null,
   series_id: null,
   series_size: 0,
   task_status_id: status.id,
   task_status: status,
+  task_type_id: type.id,
+  task_type: type,
   created_at: "",
   updated_at: "",
   completed_at: null,

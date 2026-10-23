@@ -33,8 +33,8 @@ class UserRole(str, Enum):
     """
 
     member = "member"
-    support = "support"
     moderator = "moderator"
+    support = "support"
     operator = "operator"
     owner = "owner"
 
@@ -400,6 +400,13 @@ class User(SQLModel, table=True):
         sa_column=Column(Boolean, nullable=False, server_default="true"),
     )
     task_completion_haptic_feedback: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, server_default="true"),
+    )
+    #: Whether a task being added reads its due date, priority, repeat, tags
+    #: and assignees out of the words typed into its title. On until the
+    #: account turns it off; what it reads is shown before the task is added.
+    smart_task_titles: bool = Field(
         default=True,
         sa_column=Column(Boolean, nullable=False, server_default="true"),
     )

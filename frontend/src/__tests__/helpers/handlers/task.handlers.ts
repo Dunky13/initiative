@@ -1,6 +1,12 @@
-import { HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
 
-import { buildDefaultTaskStatuses, buildTask, buildTaskListResponse } from "@/__tests__/factories";
+import {
+  buildDefaultTaskStatuses,
+  buildDefaultTaskTypes,
+  buildTask,
+  buildTaskListResponse,
+  TASK_GROUPINGS,
+} from "@/__tests__/factories";
 
 import { communityHttp } from "../communityHttp";
 
@@ -8,6 +14,19 @@ export const taskHandlers = [
   communityHttp.get("/tasks/", () => {
     return HttpResponse.json(buildTaskListResponse());
   }),
+
+  // A list grouped by anything has no groups until a test says what they are.
+  communityHttp.get("/tasks/groups", () => HttpResponse.json({ groups: [], rows: {} })),
+
+  http.get("/api/v1/fields/tasks", () =>
+    HttpResponse.json({
+      dataset: "tasks",
+      fields: [],
+      relations: [],
+      default_filters: [],
+      groupings: TASK_GROUPINGS,
+    })
+  ),
 
   communityHttp.get("/tasks/autocomplete", () => {
     return HttpResponse.json(
@@ -21,5 +40,9 @@ export const taskHandlers = [
 
   communityHttp.get("/projects/:id/task-statuses/", () => {
     return HttpResponse.json(buildDefaultTaskStatuses());
+  }),
+
+  communityHttp.get("/projects/:id/task-types/", ({ params }) => {
+    return HttpResponse.json(buildDefaultTaskTypes(Number(params.id)));
   }),
 ];

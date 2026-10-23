@@ -359,6 +359,32 @@ describe("realtime resource frames", () => {
     expect(counter(), "a counter's chip").toBe(false);
   });
 
+  it("refreshes every task, listed or open, when a project's types change", () => {
+    // A task carries its type's name, look and page shape, and the change
+    // names the project, not the tasks of the type.
+    const list = seed([`/api/v1/c/${COMMUNITY}/tasks/`, { project_id: 7 }]);
+    const page = seed([`/api/v1/c/${COMMUNITY}/tasks/${ENTITY_ID}`]);
+    const chip = seed(chipKey(COMMUNITY, `task:${ENTITY_ID}:status`));
+    const counter = seed(chipKey(COMMUNITY, "counter:4:value"));
+
+    applyChanges(
+      [
+        {
+          resource: { type: "projects", id: 7 },
+          parents: [],
+          action: "updated",
+          changed: ["types"],
+        },
+      ],
+      COMMUNITY
+    );
+
+    expect(list(), "a list of tasks").toBe(true);
+    expect(page(), "a task's page").toBe(true);
+    expect(chip(), "a task's chip").toBe(true);
+    expect(counter(), "a counter's chip").toBe(false);
+  });
+
   it("refreshes a project's layouts when they change, and not on any other update", () => {
     // The layouts are read at an address of their own, so the project's own
     // refresh does not reach them.

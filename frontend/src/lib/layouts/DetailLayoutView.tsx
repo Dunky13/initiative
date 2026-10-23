@@ -79,6 +79,10 @@ export interface ItemHome<I, P> {
  */
 export interface DetailKind<I extends Item, C, P> {
   spec: DetailLayoutSpec;
+  /** For a kind laid out once per type of item (a task): the type an item is,
+   *  whose stored page is its own, and the page its type is drawn as until
+   *  that is changed. */
+  typed?: { typeOf: (item: I) => number; spec: (item: I) => DetailLayoutSpec };
   /** Its fields, given its initiative's properties and the plug-ins'. */
   fields: (definitions: PropertyDefinitionRead[], plugins: FieldDef[]) => Map<string, FieldDef>;
   /** Where its fields' labels are worded. */
@@ -167,7 +171,17 @@ const ItemRelations = () => {
   );
 };
 
-const ItemActions = () => <>{useDrawn().home.actions}</>;
+/** What can be done with the item, at the end of the row it is in. A row too
+ *  narrow for them beside the title puts them on a line of their own above it
+ *  (the row's `stackClassName`). */
+const ItemActions = () => {
+  const { actions } = useDrawn().home;
+  return actions ? (
+    <div data-item-actions className="ml-auto shrink-0">
+      {actions}
+    </div>
+  ) : null;
+};
 
 /** The links an item being added is to be made with. */
 export const AddingLinks = createContext<{
@@ -243,7 +257,8 @@ const ItemDetail = <I extends Item, C, P>({
 }: ViewProps<I, C, P>) => {
   const { i18n } = useTranslation();
   const home = detail.home(item, context);
-  const { spec, taskRoute, Shell } = detail;
+  const { taskRoute, Shell } = detail;
+  const spec = detail.typed?.spec(item) ?? detail.spec;
   const gp = useCommunityPath();
   const taskHref = useCallback(
     (taskId: number) => (taskRoute ? gp(taskRoute(item, context, taskId)) : ""),

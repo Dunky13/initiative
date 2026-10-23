@@ -53,7 +53,7 @@ from app.models.tenant.property import (
     PropertyType,
 )
 from app.models.tenant.relationship import EntityRelationship
-from app.models.tenant.task import Task, TaskAssignee, TaskPriority
+from app.models.tenant.task import RecurrenceStrategy, Task, TaskAssignee, TaskPriority
 from app.schemas.query import FilterCondition, FilterGroup, FilterOp, SortDir
 from app.schemas.tenant.task import TaskListRead
 from app.services import fields as fields_registry
@@ -468,13 +468,7 @@ _LIST_ROW_OPTIONS = (
     selectinload(Task.project).selectinload(Project.initiative),
     selectinload(Task.assignees),
     selectinload(Task.task_status),
-)
-
-#: What an export row reads beyond the task itself.
-_EXPORT_ROW_OPTIONS = (
-    selectinload(Task.project),
-    selectinload(Task.assignees),
-    selectinload(Task.task_status),
+    joinedload(Task.task_type),
 )
 
 
@@ -513,6 +507,7 @@ async def load_tasks(session: AsyncSession, task_ids: list[int]) -> list[Task]:
         .options(
             joinedload(Task.project).joinedload(Project.initiative),
             joinedload(Task.task_status),
+            joinedload(Task.task_type),
             joinedload(Task.creator),
             selectinload(Task.assignees),
         )
@@ -562,6 +557,7 @@ async def load_for_change(
             .options(
                 with_tool(Task.project),
                 joinedload(Task.task_status),
+                joinedload(Task.task_type),
                 selectinload(Task.assignees),
             )
             .execution_options(populate_existing=populate_existing)
@@ -662,6 +658,7 @@ def _global_task_options():
         joinedload(Task.project).joinedload(Project.initiative),
         selectinload(Task.assignees),
         selectinload(Task.task_status),
+        joinedload(Task.task_type),
     )
 
 
@@ -727,7 +724,7 @@ async def _gather_global_task_reads(
         return [(_guild_id, row) for row in rows]
 
     keys = await gather_across_guilds(
-        session, current_user.id, target_guilds, _order_keys
+        session, {current_user.id: target_guilds}, _order_keys
     )
     # Sort across ALL guilds before slicing — the per-guild queries return rows
     # unordered, so this is where global ordering is established.
@@ -802,7 +799,7 @@ async def _gather_global_task_reads(
         ]
 
     hydrated = await gather_across_guilds(
-        session, current_user.id, sorted(wanted), _hydrate
+        session, {current_user.id: sorted(wanted)}, _hydrate
     )
     hydrated.sort(key=lambda pair: pair[0])
     return [read for _, read in hydrated], total_count, actual_page
@@ -1053,7 +1050,7 @@ async def _load_property_definitions_across_guilds(
         return list(defs.values())
 
     definitions = await gather_across_guilds(
-        session, current_user.id, target_guilds, _fetch
+        session, {current_user.id: target_guilds}, _fetch
     )
     merged: dict[int, PropertyDefinition] = {}
     for defn in definitions:
@@ -1152,7 +1149,7 @@ async def count_tasks_for_export(
     return (await session.exec(select(func.count()).select_from(count_subq))).one()
 
 
-async def query_tasks_for_export(
+async def task_ids_for_export(
     session,
     current_user: User,
     *,
@@ -1160,11 +1157,10 @@ async def query_tasks_for_export(
     sorting: Optional[str] = None,
     tz: Optional[str] = None,
     include_archived: bool = False,
-    max_rows: int,
-) -> list[Task]:
-    """The tasks export adapter's query seam: the exact ``list_tasks``
-    visibility/filter/sort pipeline, unpaginated up to ``max_rows``, with the
-    eager loads the export payload needs."""
+    limit: int,
+) -> list[int]:
+    """The ids an export snapshot holds, up to ``limit``: what a grouped
+    export counts its rows from."""
     q = await parse_task_list_query(session, conditions, sorting, tz)
     build = await guild_task_query_builder(
         session,
@@ -1175,14 +1171,10 @@ async def query_tasks_for_export(
     )
     if build is None:
         return []
-    statement = list_statement(build, q, *_EXPORT_ROW_OPTIONS)
-    tasks = list(await session.exec(statement.limit(max_rows)))
-    await tags_service.annotate_tags(session, tasks)
-    await properties_service.annotate_properties(session, tasks)
-    return tasks
+    return list(await session.exec(build(select(Task.id)).limit(limit)))
 
 
-async def query_tasks_for_detailed_export(
+async def query_task_reads_for_export(
     session,
     current_user: User,
     *,
@@ -1191,14 +1183,10 @@ async def query_tasks_for_detailed_export(
     tz: Optional[str] = None,
     include_archived: bool = False,
     max_rows: int,
-) -> tuple[list[Task], dict[int, list[Comment]]]:
-    """Detailed-report seam: the same ``list_tasks`` visibility/filter/sort
-    pipeline as ``query_tasks_for_export``, but with the extra eager loads a
-    one-task-per-page report needs (tags) plus each task's comments
-    batch-loaded by id. Comments have no ``Task`` relationship, so they are
-    fetched separately — under the caller's RLS session, scoped to the same
-    initiatives the tasks came from (the tasks are already visibility-filtered,
-    so their comments are in reachable initiatives)."""
+) -> list[TaskListRead]:
+    """The task list's own rows for an export: the ``list_tasks`` visibility,
+    filters and order, unpaginated up to ``max_rows``, read as the list reads
+    them, so an export holds what the list shows."""
     q = await parse_task_list_query(session, conditions, sorting, tz)
     build = await guild_task_query_builder(
         session,
@@ -1208,13 +1196,57 @@ async def query_tasks_for_detailed_export(
         include_archived=include_archived,
     )
     if build is None:
-        return [], {}
-    statement = list_statement(build, q, *_EXPORT_ROW_OPTIONS)
-    tasks = list(await session.exec(statement.limit(max_rows)))
-    await tags_service.annotate_tags(session, tasks)
-    await properties_service.annotate_properties(session, tasks)
-    comments = await _load_comments_for_tasks(session, [t.id for t in tasks if t.id])
-    return tasks, comments
+        return []
+    rows = list(await session.exec(list_row_statement(build, q).limit(max_rows)))
+    return await list_reads(session, rows, routed_guild_id(session))
+
+
+async def task_reads_by_id(
+    session,
+    current_user: User,
+    project_ids: Collection[int],
+    task_ids: Collection[int],
+) -> dict[int, TaskListRead]:
+    """The task list's rows for these tasks of these projects, archived ones
+    included, by id: for an export that has already been allowed the projects
+    and chosen their tasks (a project's report)."""
+    if not task_ids:
+        return {}
+    q = await parse_task_list_query(session, None, None, None)
+    build = await guild_task_query_builder(
+        session,
+        current_user,
+        require_guild_context(session),
+        q=q,
+        include_archived=True,
+        projects=project_ids,
+    )
+    if build is None:
+        return {}
+    statement = list_row_statement(build, q).where(Task.id.in_(list(task_ids)))
+    reads = await list_reads(
+        session, list(await session.exec(statement)), routed_guild_id(session)
+    )
+    return {read.id: read for read in reads}
+
+
+async def task_details_for_export(
+    session, task_ids: list[int]
+) -> tuple[dict[int, tuple[Optional[str], list]], dict[int, list[Comment]]]:
+    """What a detailed report adds to listed tasks: each one's description and
+    checklist, and its comments. Read under the caller's session, for tasks
+    the list already let them see."""
+    if not task_ids:
+        return {}, {}
+    details = {
+        task_id: (description, checklist or [])
+        for task_id, description, checklist in await session.exec(
+            select(Task.id, Task.description, Task.checklist).where(
+                Task.id.in_(task_ids)
+            )
+        )
+    }
+    return details, await _load_comments_for_tasks(session, task_ids)
 
 
 async def _load_comments_for_tasks(
@@ -1263,7 +1295,10 @@ def _task_calendar_window_clause(
         if start_before is not None:
             bounds.append(field <= start_before)
         field_clauses.append(and_(*bounds))
-    repeating = [Task.recurrence.isnot(None), Task.recurrence_strategy != "rolling"]
+    repeating = [
+        Task.recurrence.isnot(None),
+        Task.recurrence_strategy != RecurrenceStrategy.rolling,
+    ]
     if start_before is not None:
         repeating.append(Task.due_date <= start_before)
     if start_after is not None:
@@ -1295,16 +1330,20 @@ def projected_occurrences(
         if within(task.start_date) or within(task.due_date):
             placed.append(task)
         due = task.due_date
-        if not task.recurrence or due is None or task.recurrence_strategy == "rolling":
+        if (
+            not task.recurrence
+            or due is None
+            or task.recurrence_strategy == RecurrenceStrategy.rolling
+        ):
             continue
         try:
             starts = recurrence.between(
                 task.recurrence,
-                due,
+                task.recurrence_anchor or due,
                 task.recurrence_shift,
                 start_after,
                 start_before,
-                count=False,
+                done=task.recurrence_anchor_count,
                 at_most=recurrence.MAX_EXPANDED - expanded + 1,
             )
         except ValueError:

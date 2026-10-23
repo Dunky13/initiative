@@ -21,6 +21,7 @@ moving an event moves its answers, which its editors may do.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import EllipsisType
 from typing import Iterable
 
 from fastapi import HTTPException, status
@@ -478,6 +479,34 @@ async def followed(session: AsyncSession, event: CalendarEvent, field: str) -> N
         session.add(event)
     elif event.recurrence:
         await follow(session, event, [field])
+
+
+def repeat_edited(
+    event: CalendarEvent,
+    sent: str | None | EllipsisType,
+    *,
+    old_recurrence: str | None,
+    previous_start: datetime,
+    previous_all_day: bool,
+    tz: str | None,
+) -> None:
+    """The event's repeat once an edit has set its start
+    (:func:`recurrence.edited`). An all-day event's days are UTC dates,
+    whatever zone it was made in, so turning all day on or off moves the
+    repeat as a new start does. A rule written without skipped or extra starts
+    keeps the ones the series had."""
+    event.recurrence, event.recurrence_shift = recurrence.edited(
+        event.recurrence,
+        event.recurrence_shift,
+        sent,
+        moved=event.start_at != previous_start or event.all_day != previous_all_day,
+        old_start=previous_start,
+        new_start=event.start_at,
+        tz="UTC" if event.all_day else tz,
+        kind="event",
+    )
+    if sent is not ... and event.recurrence:
+        event.recurrence = recurrence.kept_exceptions(event.recurrence, old_recurrence)
 
 
 async def rehome(

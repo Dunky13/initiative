@@ -21,10 +21,11 @@ both count and build time, under the caller's RLS session.
 from __future__ import annotations
 
 from collections.abc import Collection
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import Select, func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -34,6 +35,7 @@ from app.core.user_input_validators import resolve_zone
 from app.db.session import require_guild_context
 from app.models.platform.user import User
 from app.schemas.tenant.project_export import ProjectExportEnvelope
+from app.schemas.tenant.tool_layout import MAX_NODES
 from app.services.export.adapters._common import (
     BuildContext,
     ToolExportAdapter,
@@ -41,27 +43,12 @@ from app.services.export.adapters._common import (
     export_stem,
     get_for_export,
 )
+from app.services.export import values
+from app.services.export.adapters.tasks_table import task_columns
 from app.services.export.contract import RenderItem
 from app.services.export.filters import narrow, parse_filters
 from app.services.export.i18n import et, export_locale
 from app.services.permissions import EXPORT_ACCESS
-
-# (row key, ``exports`` label key, Typst width hint) — labels resolve to the
-# creator's locale at build time.
-_COLUMNS = (
-    ("title", "columns.task", "2fr"),
-    ("status", "columns.status", "auto"),
-    ("priority", "columns.priority", "auto"),
-    ("due", "columns.due", "auto"),
-    ("assignees", "columns.assignees", "1fr"),
-)
-
-
-def _columns(locale: str) -> list[dict]:
-    return [
-        {"key": key, "label": et(label_key, locale), "width": width}
-        for key, label_key, width in _COLUMNS
-    ]
 
 
 class TaskFilters(BaseModel):
@@ -73,6 +60,9 @@ class TaskFilters(BaseModel):
     conditions: str | None = None
     sorting: str | None = None
     include_archived: bool = False
+    #: The layout fields the reader's table of the project shows, which its
+    #: report shows (``tasks_table.task_columns``).
+    columns: list[str] | None = Field(default=None, max_length=MAX_NODES)
 
     @field_validator("conditions")
     @classmethod
@@ -196,18 +186,16 @@ class ProjectAdapter(ToolExportAdapter):
         envelopes: list[ProjectExportEnvelope],
         ctx: BuildContext,
         /,
-    ) -> list[str | None] | None:
+    ) -> "Prepared":
         """The refs of the tasks the export's task filters leave, in the order
-        they list them; ``None`` keeps every task."""
+        they list them (``None`` keeps every task), and, for a report, the
+        task list's rows for them and the columns the reader's table shows."""
+        from app.models.tenant.task import Task
+        from app.services.tenant import task_queries
         from app.services.tenant.project_export import task_ref
 
-        tasks = getattr(ctx.filters, "tasks", None)
-        if tasks is None:
-            return None
-        from app.models.tenant.task import Task
-
         ids = [
-            int(task.external_ref.removeprefix("task:"))
+            _task_id(task.external_ref)
             for envelope in envelopes
             for task in envelope.tasks
             if task.external_ref
@@ -215,16 +203,31 @@ class ProjectAdapter(ToolExportAdapter):
         projects = set(
             await session.exec(select(Task.project_id).where(Task.id.in_(ids)))
         )
-        kept = await matching_tasks(
-            session, ctx.user, projects, tasks, getattr(ctx.now.tzinfo, "key", None)
+        tasks = getattr(ctx.filters, "tasks", None)
+        kept = None
+        if tasks is not None:
+            matched = await matching_tasks(
+                session, ctx.user, projects, tasks, getattr(ctx.now.tzinfo, "key", None)
+            )
+            kept = [task_ref(task_id) for task_id in matched]
+        if ctx.format == "json":
+            return Prepared(kept)
+        reads = await task_queries.task_reads_by_id(session, ctx.user, projects, ids)
+        columns = await task_columns(
+            session,
+            getattr(tasks, "columns", None),
+            list(reads.values()),
+            export_locale(ctx.user),
+            getattr(ctx.now.tzinfo, "key", None),
         )
-        return [task_ref(task_id) for task_id in kept]
+        return Prepared(kept, reads, columns)
 
     def title(self, envelope: ProjectExportEnvelope, /) -> str:
         return envelope.project.name
 
     def item(self, envelope: ProjectExportEnvelope, ctx: BuildContext, /) -> RenderItem:
-        kept: Any = ctx.prepared
+        prepared: Prepared = ctx.prepared or Prepared(None)
+        kept = prepared.kept
         if kept is not None:
             order = {ref: index for index, ref in enumerate(kept)}
             # A link to a task this export left out has nothing to land on.
@@ -249,8 +252,21 @@ class ProjectAdapter(ToolExportAdapter):
                 }
             )
         return build_project_item(
-            envelope, ctx.format, ctx.user, ctx.now, filtered=kept is not None
+            envelope, ctx.format, ctx.user, ctx.now, prepared, filtered=kept is not None
         )
+
+
+@dataclass(frozen=True)
+class Prepared:
+    """What a project export's batch is built from beyond its envelopes."""
+
+    kept: list[str | None] | None
+    reads: dict[int, Any] = field(default_factory=dict)
+    columns: list[values.Column] = field(default_factory=list)
+
+
+def _task_id(external_ref: str) -> int:
+    return int(external_ref.removeprefix("task:"))
 
 
 async def _matching(
@@ -325,6 +341,7 @@ def build_project_item(
     format: str,
     user: User,
     now: datetime,
+    prepared: Prepared,
     *,
     filtered: bool = False,
 ) -> RenderItem:
@@ -338,21 +355,24 @@ def build_project_item(
             data=envelope.model_dump(mode="json"),
         )
     return RenderItem(
-        key=export_stem(name, date), data=_report_payload(envelope, user, filtered)
+        key=export_stem(name, date),
+        data=_report_payload(envelope, user, prepared, filtered),
     )
 
 
 def _report_payload(
-    envelope: ProjectExportEnvelope, user: User, filtered: bool
+    envelope: ProjectExportEnvelope, user: User, prepared: Prepared, filtered: bool
 ) -> dict:
     # A report shows what the task list does: the filters' answer when the
     # export has one, which already says whether archived tasks belong, and
     # the list's default otherwise.
     project_archived_at = envelope.project.archived_at
     tasks = [
-        t
+        prepared.reads[_task_id(t.external_ref)]
         for t in envelope.tasks
-        if filtered or t.archived_at is None or t.archived_at == project_archived_at
+        if t.external_ref
+        and _task_id(t.external_ref) in prepared.reads
+        and (filtered or t.archived_at is None or t.archived_at == project_archived_at)
     ]
     loc = export_locale(user)
     return {
@@ -362,18 +382,7 @@ def _report_payload(
         "footer": et("footer.project", loc, name=envelope.project.name),
         "page_of": et("pageOf", loc),
         "description": envelope.project.description or "",
-        "columns": _columns(loc),
+        "columns": values.head(prepared.columns),
         "empty_message": et("empty.project", loc),
-        "rows": [
-            {
-                "title": t.title,
-                "status": t.status_name,
-                "priority": et(f"priority.{t.priority.value}", loc)
-                if t.priority
-                else "",
-                "due": t.due_date.strftime("%Y-%m-%d") if t.due_date else "",
-                "assignees": ", ".join(t.assignee_names),
-            }
-            for t in tasks
-        ],
+        "rows": [values.cells(prepared.columns, t) for t in tasks],
     }

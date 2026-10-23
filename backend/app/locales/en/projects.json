@@ -1,0 +1,106 @@
+{
+  "taskTypes": {
+    "defaults": {
+      "task": "Task",
+      "bug": "Bug",
+      "idea": "Idea",
+      "milestone": "Milestone"
+    },
+    "gallery": {
+      "groups": {
+        "planning": "Planning",
+        "home": "Around the house",
+        "groups": "Groups and volunteers",
+        "making": "Making things",
+        "learning": "Learning"
+      },
+      "types": {
+        "milestone": {
+          "name": "Milestone",
+          "hint": "A date to reach, and what has to happen first"
+        },
+        "event": {
+          "name": "Event",
+          "hint": "Or a gig, a session, a meetup: a date and a place"
+        },
+        "appointment": {
+          "name": "Appointment",
+          "hint": "A time and a place to be"
+        },
+        "chore": {
+          "name": "Chore",
+          "hint": "Something that comes round every week"
+        },
+        "errand": {
+          "name": "Errand",
+          "hint": "A list to work through, like the shopping"
+        },
+        "bill": {
+          "name": "Bill",
+          "hint": "An amount due every month"
+        },
+        "shift": {
+          "name": "Volunteer shift",
+          "hint": "When, where, and who has signed up"
+        },
+        "purchase": {
+          "name": "Purchase",
+          "hint": "Something to buy: what it costs and where"
+        },
+        "question": {
+          "name": "Question",
+          "hint": "Something to talk over until there is an answer"
+        },
+        "idea": {
+          "name": "Idea",
+          "hint": "Something worth thinking about"
+        },
+        "request": {
+          "name": "Request",
+          "hint": "Something somebody has asked for"
+        },
+        "bug": {
+          "name": "Bug",
+          "hint": "Something that is broken"
+        },
+        "feature": {
+          "name": "Feature",
+          "hint": "Something new to build"
+        },
+        "art": {
+          "name": "Art",
+          "hint": "A picture, a sound, a piece of design"
+        },
+        "playtest": {
+          "name": "Playtest note",
+          "hint": "What happened when somebody played it"
+        },
+        "assignment": {
+          "name": "Assignment",
+          "hint": "Work due on a date"
+        },
+        "reading": {
+          "name": "Reading",
+          "hint": "Something to read, and where to find it"
+        }
+      },
+      "fields": {
+        "location": "Location",
+        "link": "Link",
+        "amount": "Amount",
+        "cost": "Cost"
+      },
+      "outlines": {
+        "bug": "**What happened**\n\n\n**What should have happened**\n\n\n**How to make it happen again**\n\n",
+        "playtest": "**Who played, and which version**\n\n\n**What worked**\n\n\n**What didn't**\n\n"
+      }
+    }
+  },
+  "taskStatuses": {
+    "defaults": {
+      "todo": "To Do",
+      "inProgress": "In Progress",
+      "done": "Done"
+    }
+  }
+}

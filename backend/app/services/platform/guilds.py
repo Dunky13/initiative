@@ -54,7 +54,6 @@ from app.services import audit as audit_service
 from app.services.marketplace import community_hooks
 from app.services.auth import addresses
 from app.services.platform import billing as billing_service
-from app.services.platform import billing_ping
 
 from app.services.platform import account_stream, user_stream
 from app.services.platform import api_keys as api_keys_service
@@ -436,7 +435,6 @@ async def ensure_membership(
     account_stream.queue_account_signal(session, user_id, "membership")
     # Nudge billing that this guild's membership changed. No-op unless a
     # hosted deployment configured the outbound billing settings.
-    billing_ping.notify_membership_changed(guild_id)
     if guest_until is None:
         enroll_new_member_in_auto_join_initiatives(
             session, guild_id=guild_id, user_id=user_id, role=role
@@ -673,7 +671,6 @@ async def make_guest_a_member(
         detail={"role": membership.role.value},
     )
     account_stream.queue_account_signal(session, user_id, "membership")
-    billing_ping.notify_membership_changed(guild_id)
     enroll_new_member_in_auto_join_initiatives(
         session, guild_id=guild_id, user_id=user_id, role=membership.role
     )
@@ -882,8 +879,7 @@ async def list_memberships(
         retention = dict(
             await gather_across_guilds(
                 session,
-                user_id,
-                live_administered,
+                {user_id: live_administered},
                 _retention,
                 for_settings=True,
             )
@@ -1015,28 +1011,6 @@ async def may_create_another_guild(session: AsyncSession, *, user_id: int) -> bo
         .where(Guild.created_by == user_id, Guild.created_at > since)
     )
     return (created or 0) < limit
-
-
-async def holds_a_free_guild(session: AsyncSession, *, user_id: int) -> bool:
-    """Does this account already have the one free community it gets?"""
-    result = await session.exec(
-        select(GuildMembership.guild_id)
-        .join(
-            GuildAdministration,
-            GuildAdministration.guild_id == GuildMembership.guild_id,
-            isouter=True,
-        )
-        .where(
-            GuildMembership.user_id == user_id,
-            GuildMembership.role == CommunityRole.superadmin,
-            or_(
-                GuildAdministration.plan_is_free.is_(None),
-                GuildAdministration.plan_is_free.is_(True),
-            ),
-        )
-        .limit(1)
-    )
-    return result.first() is not None
 
 
 async def create_guild(
@@ -1980,21 +1954,25 @@ async def announce_on_hold(session: AsyncSession, guild_id: int) -> None:
 
 
 #: The bell line each billing trial notice writes.
-_TRIAL_NOTICE_TYPES = {
-    "trial_ending": NotificationType.community_trial_ending,
-    "trial_ended": NotificationType.community_trial_ended,
+#: Each billing notice kind: the bell line's type, and the key its day is
+#: kept under in the line's data.
+_BILLING_NOTICES = {
+    "trial_ending": (NotificationType.community_trial_ending, "trial_ends_on"),
+    "trial_ended": (NotificationType.community_trial_ended, "trial_ends_on"),
+    "pause_reminder": (NotificationType.community_pause_reminder, "holds_on"),
 }
 
 
-async def queue_trial_notice(
+async def queue_billing_notice(
     session: AsyncSession,
     guild_id: int,
     *,
     kind: str,
-    trial_ends_on: date,
+    day: date,
     owner_user_id: int | None,
 ) -> bool:
-    """Write down a notice that a community's trial is ending or has ended.
+    """Write down a notice billing asked for: a community's trial is ending
+    or has ended, or its paused plan goes on hold on ``day``.
 
     On the system engine, before billing's event id is claimed: this commits
     the bell lines and the letters to the notice outbox, whose worker delivers
@@ -2030,16 +2008,17 @@ async def queue_trial_notice(
     recipients = [owner_user_id] if owner_user_id in seats else seats
     if not recipients:
         return False
+    notification_type, day_key = _BILLING_NOTICES[kind]
     await _queue_plan_notice(
         session,
         guild,
         recipients,
-        _TRIAL_NOTICE_TYPES[kind],
-        {"trial_ends_on": trial_ends_on.isoformat()},
-        lambda locale: email_service.community_trial_pieces(
+        notification_type,
+        {day_key: day.isoformat()},
+        lambda locale: email_service.community_billing_notice_pieces(
             kind=kind,
             community=guild.name,
-            trial_ends_on=trial_ends_on,
+            day=day,
             guild_id=guild_id,
             locale=locale,
         ),
@@ -2047,14 +2026,10 @@ async def queue_trial_notice(
     return True
 
 
-async def welcome_new_guild(
-    guild_id: int, *, owner_user_id: int, plan: str | None = None
-) -> None:
-    """Once a new community is committed: claim it for its owner and, where
-    billing sets plans, welcome them to set one up. Never fails the creation."""
-    from app.services.platform import billing_claim
-
-    billing_claim.claim_new_guild(user_id=owner_user_id, guild_id=guild_id, plan=plan)
+async def welcome_new_guild(guild_id: int, *, owner_user_id: int) -> None:
+    """Once a new community is committed: where billing sets plans, welcome
+    its owner to set one up. Never fails the creation. Billing learns of the
+    community, and of its owner, from the change log."""
     if not settings.BILLING_URL:
         return
     try:
@@ -3095,7 +3070,6 @@ async def remove_user_from_guild(
         # Same reason as the insert side: what is asked of this account can
         # change with where it belongs, and leaving is not always their doing.
         account_stream.queue_account_signal(session, user_id, "membership")
-        billing_ping.notify_membership_changed(guild_id)
         # This community was a leg of can_ask for everyone they shared it with,
         # so every open channel that rested on it is re-tested — one survives if
         # the pair connected, which is what a connection is for. Queued rather

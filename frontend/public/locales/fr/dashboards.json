@@ -155,6 +155,7 @@
   "filterField": {
     "status_category": "Catégorie de statut",
     "task_status_id": "Statut",
+    "task_type_id": "Type",
     "priority": "Priorité",
     "assignee_ids": "Responsable",
     "tag_ids": "Étiquette",
@@ -198,6 +199,7 @@
     "value": "Valeur",
     "empty": "Aucun filtre — affiche tout dans l'initiative.",
     "chooseValue": "Choisir…",
+    "typeInProject": "{{type}} ({{project}})",
     "relative": "Relative",
     "absolute": "À une date",
     "relativeDays": "Jours à partir d'aujourd'hui",
@@ -255,7 +257,8 @@
     "column": "Colonne",
     "date": "Date",
     "total": "Total",
-    "series": "Séparer par"
+    "series": "Séparer par",
+    "done": "Terminé"
   },
   "builder": {
     "dataset": "Afficher les données de",
@@ -305,7 +308,8 @@
     "counter_groups": "Groupes de compteurs",
     "task_statuses": "Statuts de tâche",
     "property_values": "Valeurs des propriétés",
-    "property_definitions": "Propriétés"
+    "property_definitions": "Propriétés",
+    "relationships": "Liens"
   },
   "viewMode": {
     "label": "Exécuter le tableau de bord en tant que",

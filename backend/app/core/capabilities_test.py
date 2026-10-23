@@ -52,6 +52,24 @@ def test_data_bypass_is_operator_and_owner():
     )
 
 
+def test_a_moderator_holds_moderation_alone():
+    """No grant but ``moderate``, no account recovery, no billing: support
+    holds all of that, on top of everything a moderator does."""
+    moderator = capabilities_for(UserRole.moderator)
+    assert Capability.CONTENT_MODERATE in moderator
+    assert Capability.COMMUNITIES_SUSPEND in moderator
+    assert Capability.ACCESS_REQUEST in moderator
+    for capability in (
+        Capability.ACCESS_REQUEST_ANY,
+        Capability.USERS_MANAGE,
+        Capability.USERS_AGE_UNBLOCK,
+        Capability.BILLING_SUPPORT,
+    ):
+        assert capability not in moderator
+        assert capability in capabilities_for(UserRole.support)
+    assert moderator < capabilities_for(UserRole.support)
+
+
 def test_access_approve_is_operator_and_owner():
     """Approvers are also the ones who read the full access-grant queue."""
     assert roles_with_capability(Capability.ACCESS_APPROVE) == frozenset(
@@ -62,8 +80,8 @@ def test_access_approve_is_operator_and_owner():
 def test_role_rank_follows_the_ladder():
     ladder = [
         UserRole.member,
-        UserRole.support,
         UserRole.moderator,
+        UserRole.support,
         UserRole.operator,
         UserRole.owner,
     ]

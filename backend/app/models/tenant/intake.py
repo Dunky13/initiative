@@ -90,6 +90,17 @@ class IntakeBinding(CreatedByMixin, table=True):
         ),
     )
 
+    # The type a new case is. NULL means the project's default, read against
+    # the project when used, as the landing status is.
+    task_type_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            Integer,
+            ForeignKey("task_types.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+
     # The status that means "waiting on whoever filed it", and the one a case
     # goes back to when they answer. NULL where the project has no such
     # status: a filer is then never told the case is waiting on them, and

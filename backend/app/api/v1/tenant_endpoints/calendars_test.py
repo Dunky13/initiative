@@ -2,6 +2,7 @@
 authorization gates (initiative isolation, role create gate, feature gate,
 DAC levels, guild-admin override)."""
 
+import icalendar
 from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -664,11 +665,18 @@ async def test_a_feed_link_serves_its_calendar_and_nothing_else(
     admin, member, calendar = await _member_with_calendar(session, acting_user)
     other = await create_calendar(session, admin.initiative, admin.user)
     token = await _feed_link(client, member, calendar)
+    member.user.timezone = "Europe/London"
+    session.add(member.user)
+    await session.commit()
 
     served = await client.get(_feed(member, calendar.id, token))
     assert served.status_code == 200, served.text
     assert served.headers["content-type"].startswith("text/calendar")
     assert "SUMMARY:Standup" in served.text
+    # Named with its initiative, and listed in the subscriber's zone.
+    feed = icalendar.Calendar.from_ical(served.text)
+    assert feed.calendar_name == f"{calendar.name} · {admin.initiative.name}"
+    assert feed["X-WR-TIMEZONE"] == "Europe/London"
     unchanged = await client.get(
         _feed(member, calendar.id, token),
         headers={"If-None-Match": f'"other", W/{served.headers["ETag"]}'},

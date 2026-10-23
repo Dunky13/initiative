@@ -48,6 +48,18 @@ describe("normalizeSheetRange", () => {
 });
 
 describe("normalizeQueryRows", () => {
+  it("preserves calendar-date metadata without marking true timestamps", () => {
+    const { columns } = normalizeQueryRows(
+      [
+        { name: "day", type: "date", date_only: true },
+        { name: "at", type: "date", date_only: false },
+      ],
+      []
+    );
+    expect(columns[0]).toEqual({ name: "day", type: "date", date_only: true });
+    expect(columns[1].date_only).not.toBe(true);
+  });
+
   it("keeps a grain it knows and drops one it does not", () => {
     const { columns } = normalizeQueryRows(
       [

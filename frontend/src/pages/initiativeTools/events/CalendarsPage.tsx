@@ -915,6 +915,7 @@ export const CalendarsView = ({
         defaultCalendarId={focusCalendarId}
         {...(fixedInitiativeId !== undefined ? { initiativeId: fixedInitiativeId } : {})}
         defaultStartDate={defaultStartDate}
+        defaultStartTime={createDefaultDate ? format(createDefaultDate, "HH:mm") : undefined}
         onSuccess={handleEventCreated}
       />
 

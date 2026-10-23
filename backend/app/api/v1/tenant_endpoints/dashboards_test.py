@@ -11,7 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.tools import Tool
 from app.models.platform.guild import CommunityRole
-from app.testing import create_dashboard, strip_non_owner_grants
+from app.testing import create_dashboard, create_project, strip_non_owner_grants
 
 
 def _stat_definition() -> dict:
@@ -35,6 +35,40 @@ async def _dashboards_enabled(session: AsyncSession, initiative) -> None:
     session.add(initiative)
     await session.commit()
     await session.refresh(initiative)
+
+
+async def test_canvas_retains_sql_calendar_date_kind(client, session, acting_user):
+    actor = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    await _dashboards_enabled(session, actor.initiative)
+    await create_project(session, actor.initiative, actor.user)
+    dashboard = await create_dashboard(
+        session,
+        actor.initiative,
+        actor.user,
+        definition={
+            "widgets": [
+                {
+                    "id": "dates",
+                    "type": "table",
+                    "binding": {
+                        "source": "query",
+                        "sql": (
+                            "SELECT date '2026-08-03' AS day,"
+                            " timestamptz '2026-08-03T00:00:00Z' AS at"
+                            " FROM projects LIMIT 1"
+                        ),
+                    },
+                }
+            ]
+        },
+    )
+    response = await client.get(
+        actor.g(f"/dashboards/{dashboard.id}/data"), headers=actor.headers
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()["widgets"]["dates"]["result"]
+    assert [column["date_only"] for column in result["columns"]] == [True, False]
+    assert result["rows"] == [[1785715200000, 1785715200000]]
 
 
 # ---------------------------------------------------------------------------

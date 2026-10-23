@@ -33,7 +33,8 @@ from app.models.platform.user import User
 from app.models.tenant.initiative import Initiative
 from app.models.tenant.intake import IntakeBinding, IntakeCase
 from app.models.tenant.project import Project
-from app.models.tenant.task import Task, TaskStatus
+from app.models.tenant.task import Task, TaskStatus, TaskType
+from app.services.tenant import task_types as task_types_service
 from app.services.marketplace.registration_lookup import invalidate_registrations
 from app.services.platform.intake import operations_guild_id
 from app.db.request_context import SystemGuild
@@ -55,6 +56,8 @@ class BindingView:
     initiative_name: Optional[str]
     default_status_id: Optional[int]
     default_status_name: Optional[str]
+    task_type_id: Optional[int]
+    task_type_name: Optional[str]
     #: Which status means "waiting on whoever filed it", and which one a case
     #: returns to when they answer.
     awaiting_filer_status_id: Optional[int]
@@ -200,6 +203,7 @@ async def _write_binding(
     project: Project,
     project_id: int,
     default_status_id: Optional[int],
+    task_type_id: Optional[int] = None,
     awaiting_filer_status_id: Optional[int] = None,
     active_status_id: Optional[int] = None,
     enabled: bool,
@@ -230,6 +234,15 @@ async def _write_binding(
                 status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail=IntakeMessages.STATUS_NOT_IN_PROJECT,
             )
+    if (
+        task_type_id is not None
+        and await task_types_service.get_project_type(session, task_type_id, project_id)
+        is None
+    ):
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=IntakeMessages.TYPE_NOT_IN_PROJECT,
+        )
     await _ensure_isolation(session, stream=stream, initiative_id=project.initiative_id)
 
     binding = (
@@ -245,6 +258,7 @@ async def _write_binding(
         binding = IntakeBinding(stream=stream, project_id=project_id)
     binding.project_id = project_id
     binding.default_status_id = default_status_id
+    binding.task_type_id = task_type_id
     binding.awaiting_filer_status_id = awaiting_filer_status_id
     binding.active_status_id = active_status_id
     binding.enabled = enabled
@@ -330,6 +344,7 @@ async def bind(
     stream: IntakeStream,
     project_id: int,
     default_status_id: Optional[int] = None,
+    task_type_id: Optional[int] = None,
     awaiting_filer_status_id: Optional[int] = None,
     active_status_id: Optional[int] = None,
     enabled: bool = True,
@@ -348,6 +363,7 @@ async def bind(
             project=project,
             project_id=project_id,
             default_status_id=default_status_id,
+            task_type_id=task_type_id,
             awaiting_filer_status_id=awaiting_filer_status_id,
             active_status_id=active_status_id,
             enabled=enabled,
@@ -399,6 +415,8 @@ async def _view(
             initiative_name=None,
             default_status_id=None,
             default_status_name=None,
+            task_type_id=None,
+            task_type_name=None,
             awaiting_filer_status_id=None,
             active_status_id=None,
             isolated=meta(stream).isolated,
@@ -413,6 +431,13 @@ async def _view(
                 select(TaskStatus.name).where(
                     TaskStatus.id == binding.default_status_id
                 )
+            )
+        ).one_or_none()
+    type_name = None
+    if binding.task_type_id is not None:
+        type_name = (
+            await session.exec(
+                select(TaskType.name).where(TaskType.id == binding.task_type_id)
             )
         ).one_or_none()
     # Cases only — the seed task a blueprint imports and anything the team adds
@@ -441,6 +466,8 @@ async def _view(
         initiative_name=initiative.name if initiative else None,
         default_status_id=binding.default_status_id,
         default_status_name=status_name,
+        task_type_id=binding.task_type_id,
+        task_type_name=type_name,
         awaiting_filer_status_id=binding.awaiting_filer_status_id,
         active_status_id=binding.active_status_id,
         isolated=meta(stream).isolated,
@@ -551,7 +578,7 @@ async def provision_from_blueprint(
 
 async def list_options(session: AsyncSession) -> list[dict]:
     """The operations guild's initiatives, their projects, and each project's
-    statuses — what the settings page's pickers offer.
+    statuses and types — what the settings page's pickers offer.
 
     Names and ids only, for the one guild the deployment has named. Empty when
     it has named none, which is what the page shows before anything is set up.
@@ -581,11 +608,23 @@ async def list_options(session: AsyncSession) -> list[dict]:
                 select(TaskStatus).order_by(TaskStatus.project_id, TaskStatus.position)
             )
         ).all()
+        types = (
+            await routed.exec(
+                select(TaskType).order_by(
+                    TaskType.project_id, TaskType.position, TaskType.id
+                )
+            )
+        ).all()
 
     by_project: dict[int, list[dict]] = {}
     for status in statuses:
         by_project.setdefault(status.project_id, []).append(
             {"id": status.id, "name": status.name}
+        )
+    types_by_project: dict[int, list[dict]] = {}
+    for task_type in types:
+        types_by_project.setdefault(task_type.project_id, []).append(
+            {"id": task_type.id, "name": task_type.name}
         )
     by_initiative: dict[int, list[dict]] = {}
     for project in projects:
@@ -594,6 +633,7 @@ async def list_options(session: AsyncSession) -> list[dict]:
                 "id": project.id,
                 "name": project.name,
                 "statuses": by_project.get(project.id, []),
+                "task_types": types_by_project.get(project.id, []),
             }
         )
     return [

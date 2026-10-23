@@ -151,7 +151,9 @@ async def resolve_subjects(
                     found.append(((guild_id, model, column, row_id), value))
         return found
 
-    titles = dict(await gather_across_guilds(session, user_id, sorted(wanted), _fetch))
+    titles = dict(
+        await gather_across_guilds(session, {user_id: sorted(wanted)}, _fetch)
+    )
 
     resolved: dict[int, dict[str, str]] = {}
     for notification_id, guild_id, needs in plan:

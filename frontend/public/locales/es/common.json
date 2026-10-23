@@ -75,6 +75,7 @@
   "copyUnavailable": "No se pudo copiar: cópialo a mano",
   "untitled": "Sin título",
   "appName": "initiative",
+  "pageTitle": "{{name}} - Initiative",
   "send": "Enviar",
   "submitting": "Enviando…",
   "clear": "Limpiar",
@@ -329,6 +330,12 @@
     "title": "Página no encontrada",
     "description": "No hay nada en esta dirección. Puede que el enlace esté mal escrito o que la página se haya movido."
   },
+  "appUpdate": {
+    "ready": "La versión {{version}} está lista. Recarga para empezar a usarla.",
+    "reload": "Recargar",
+    "updated": "Actualizado a la versión {{version}}.",
+    "whatsNew": "Novedades"
+  },
   "nativeUpdate": {
     "unsigned": "La actualización de este servidor no la publicó Initiative, así que la app se queda en la versión {{version}}.",
     "desktopReady": "Initiative ha descargado su actualización. Reinicia para terminar.",
@@ -366,6 +373,7 @@
     "discard": "Descartar",
     "undo": "Deshacer",
     "moved": "Movido a {{status}}",
+    "typeChanged": "Cambiado a {{type}}",
     "cleared": "{{field}}: valor borrado"
   },
   "descriptionField": {
@@ -374,7 +382,8 @@
     "unsavedTitle": "¿Descartar los cambios sin guardar?",
     "unsavedBody": "Tienes una descripción sin guardar. Si sales ahora, se perderá.",
     "leave": "Salir",
-    "stay": "Quedarme"
+    "stay": "Quedarme",
+    "undoSuggestion": "Deshacer sugerencia"
   },
   "kinds": {
     "project": {

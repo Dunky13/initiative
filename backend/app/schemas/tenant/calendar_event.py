@@ -5,6 +5,7 @@ from typing import Any, List, Mapping, Optional, Sequence, TYPE_CHECKING
 
 from pydantic import (
     AliasChoices,
+    AwareDatetime,
     ConfigDict,
     Field,
     PrivateAttr,
@@ -62,12 +63,12 @@ class CalendarEventRSVPUpdate(SanitizedBaseModel):
     #: An answer is for one event: on a repeating one, the occurrence it is
     #: for, by its start in the series. An occurrence with a row of its own is
     #: answered on that row.
-    occurrence: Optional[datetime] = None
+    occurrence: Optional[AwareDatetime] = None
 
 
 class OccurrenceRequest(SanitizedBaseModel):
     #: The occurrence, by its start in the series, or the extra start to add.
-    start: datetime
+    start: AwareDatetime
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +98,10 @@ class CalendarEventBase(SanitizedBaseModel):
 
 class CalendarEventCreate(CalendarEventBase, PropertiesOnCreate):
     title: TitleStr = Field(..., min_length=1, max_length=255)
+    # HTTP writes name instants. Floating iCalendar values are resolved by the
+    # import service in their declared zone before they reach persistence.
+    start_at: AwareDatetime
+    end_at: AwareDatetime
     calendar_id: int
     recurrence: Optional[EventRule] = None
     #: The zone ``recurrence``'s days were picked in, and ``recurrence_shift``
@@ -115,8 +120,8 @@ class CalendarEventUpdate(PropertiesOnUpdate):
     #: is refused with ``DESCRIPTION_CHANGED``.
     description_base: Optional[RichMentionStr] = None
     location: Optional[MentionStr] = Field(default=None, max_length=500)
-    start_at: Optional[datetime] = None
-    end_at: Optional[datetime] = None
+    start_at: Optional[AwareDatetime] = None
+    end_at: Optional[AwareDatetime] = None
     all_day: Optional[bool] = None
     rsvp_open: Optional[bool] = None
     recurrence: Optional[EventRule] = None
@@ -134,7 +139,7 @@ class CalendarEventUpdate(PropertiesOnUpdate):
     scope: Optional[OccurrenceScope] = None
     #: The occurrence, by its start in the series. Its new times for "all"
     #: move every occurrence by as much.
-    occurrence: Optional[datetime] = None
+    occurrence: Optional[AwareDatetime] = None
 
     _required = reject_null(
         "title", "start_at", "end_at", "all_day", "rsvp_open", "calendar_id"

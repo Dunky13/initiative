@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
   RecurrencePreviewRequest,
-  TaskListReadRecurrenceStrategy,
+  RecurrenceStrategy,
 } from "@/api/generated/initiativeAPI.schemas";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,8 @@ import {
   createRecurrenceFromPreset,
   detectRecurrencePreset,
   getReferenceDate,
+  isHourlyRule,
+  isValidTaskRecurrence,
   type MonthlyMode,
   maxOccurrences,
   type RecurrenceFrequency,
@@ -30,6 +32,7 @@ import {
   type RecurrenceWeekday,
   sortMonthDays,
   summarizeRecurrence,
+  type TaskRecurrenceValue,
   type TaskWeekPosition,
   toRRule,
   WEEKDAYS,
@@ -39,6 +42,13 @@ import {
 import { browserTimezone } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
 import type { TranslateFn } from "@/types/i18n";
+
+const hourlyQuickOption = (
+  kind: "task" | "event",
+  enabled: boolean,
+  label: string
+): { value: "hourly"; label: string }[] =>
+  kind === "task" && enabled ? [{ value: "hourly", label }] : [];
 
 const POSITION_KEYS: Record<TaskWeekPosition, string> = {
   first: "recurrence.positionFirst",
@@ -52,6 +62,7 @@ const MODES: MonthlyMode[] = ["day_of_month", "weekday", "weekdays", "set"];
 const MONTH_DAYS = [...Array.from({ length: 31 }, (_, i) => i + 1), -1];
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const UNIT_KEYS: Record<RecurrenceFrequency, string> = {
+  hourly: "recurrence.repeatEveryHours",
   daily: "recurrence.repeatEveryDays",
   weekly: "recurrence.repeatEveryWeeks",
   monthly: "recurrence.repeatEveryMonths",
@@ -70,8 +81,12 @@ type RecurrenceEditorProps = {
   /** The stored rule and its shift, previewed while it is kept as custom. */
   stored?: { rule: string; shift: number } | null;
   /** Tasks only: whether the next one follows the schedule or completion. */
-  strategy?: TaskListReadRecurrenceStrategy;
-  onStrategyChange?: (value: TaskListReadRecurrenceStrategy) => void;
+  strategy?: RecurrenceStrategy;
+  onStrategyChange?: (value: RecurrenceStrategy) => void;
+  limit?: number | null;
+  hasDueDate?: boolean;
+  /** Tasks update rule, strategy and daily maximum in one edit. */
+  onTaskChange?: (value: TaskRecurrenceValue) => void;
   disabled?: boolean;
 };
 
@@ -129,10 +144,31 @@ export const RecurrenceEditor = ({
   stored,
   strategy,
   onStrategyChange,
+  limit = null,
+  hasDueDate = true,
+  onTaskChange,
   disabled = false,
 }: RecurrenceEditorProps) => {
   const { t, i18n } = useTranslation(["projects", "dates"]);
+  const controlId = useId();
   const rule = value === "custom" ? null : value;
+  const hourly = kind === "task" && strategy === "rolling" && isHourlyRule(value);
+  const limitInvalid = hourly && !isValidTaskRecurrence({ rule: value, strategy, limit });
+  const changeStrategy = (next: RecurrenceStrategy) => {
+    if (onTaskChange) {
+      const nextRule =
+        next === "fixed" && isHourlyRule(value)
+          ? rule
+            ? withFrequency(rule, "daily", referenceDate)
+            : null
+          : value;
+      onTaskChange({
+        rule: nextRule,
+        strategy: next,
+        limit: next === "rolling" && isHourlyRule(nextRule) ? limit : null,
+      });
+    } else onStrategyChange?.(next);
+  };
   const detected = value === "custom" ? "custom" : detectRecurrencePreset(rule);
   // A quick pick the rule happens to match stays in the builder once opened.
   const [building, setBuilding] = useState(detected === "custom" && rule !== null);
@@ -140,18 +176,24 @@ export const RecurrenceEditor = ({
     if (rule === null) setBuilding(false);
     else if (detected === "custom") setBuilding(true);
   }, [detected, rule]);
-  const preset: RecurrencePreset = building ? "custom" : detected;
+  const preset = building ? "custom" : detected;
   const anchor = getReferenceDate(referenceDate);
   // A count stays within what the rule's frequency and interval allow.
-  const onChange = (next: RecurrenceRule | null) =>
-    setRule(
-      next?.end_after_occurrences
-        ? {
-            ...next,
-            end_after_occurrences: Math.min(next.end_after_occurrences, maxOccurrences(next)),
-          }
-        : next
-    );
+  const onChange = (next: RecurrenceRule | null) => {
+    const nextRule = next?.end_after_occurrences
+      ? {
+          ...next,
+          end_after_occurrences: Math.min(next.end_after_occurrences, maxOccurrences(next)),
+        }
+      : next;
+    if (onTaskChange)
+      onTaskChange({
+        rule: nextRule,
+        strategy: !nextRule ? "fixed" : isHourlyRule(nextRule) ? "rolling" : (strategy ?? "fixed"),
+        limit: isHourlyRule(nextRule) && strategy === "rolling" ? limit : null,
+      });
+    else setRule(nextRule);
+  };
 
   const choosePreset = (next: RecurrencePreset) => {
     if (next === "custom") {
@@ -159,7 +201,7 @@ export const RecurrenceEditor = ({
       onChange(rule ?? createRecurrenceFromPreset("daily", referenceDate));
       return;
     }
-    setBuilding(false);
+    setBuilding(next === "hourly");
     onChange(createRecurrenceFromPreset(next, referenceDate));
   };
 
@@ -167,6 +209,7 @@ export const RecurrenceEditor = ({
     (): { value: RecurrencePreset; label: string }[] => [
       { value: "none", label: t("recurrence.doesNotRepeat") },
       { value: "daily", label: t("recurrence.daily") },
+      ...hourlyQuickOption(kind, Boolean(onTaskChange), t("recurrence.hourlyAfterCompletion")),
       { value: "weekdays", label: t("recurrence.everyWeekday") },
       {
         value: "weekly",
@@ -184,7 +227,7 @@ export const RecurrenceEditor = ({
       },
       { value: "custom", label: t("recurrence.custom") },
     ],
-    [anchor, i18n.language, t]
+    [anchor, i18n.language, kind, onTaskChange, t]
   );
 
   const monthName = (month: number) =>
@@ -215,23 +258,27 @@ export const RecurrenceEditor = ({
   // Dates for an earlier pick, shown faded until the current one's arrive.
   const stale = preview.isPlaceholderData || preview.isFetching || !preview.settled;
 
-  const summary =
-    value === "custom"
+  const summary = limitInvalid
+    ? null
+    : value === "custom"
       ? t("dates:recurrenceSummary.custom")
       : rule
-        ? summarizeRecurrence(rule, { referenceDate, strategy }, t as TranslateFn)
+        ? summarizeRecurrence(rule, { referenceDate, strategy, limit }, t as TranslateFn)
         : null;
 
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label>{t("recurrence.repeat")}</Label>
+        <Label htmlFor={`${controlId}-preset`}>{t("recurrence.repeat")}</Label>
         <Select
           value={preset}
-          onValueChange={(next) => choosePreset(next as RecurrencePreset)}
+          onValueChange={(next) => {
+            const option = quickOptions.find((option) => option.value === next);
+            if (option) choosePreset(option.value);
+          }}
           disabled={disabled}
         >
-          <SelectTrigger>
+          <SelectTrigger id={`${controlId}-preset`}>
             <SelectValue placeholder={t("recurrence.doesNotRepeat")} />
           </SelectTrigger>
           <SelectContent>
@@ -260,7 +307,7 @@ export const RecurrenceEditor = ({
         <div className="space-y-4 rounded-md border border-border/70 p-4">
           <div className="grid grid-cols-pair gap-3">
             <div className="space-y-2">
-              <Label>{t("recurrence.frequency")}</Label>
+              <Label htmlFor={`${controlId}-frequency`}>{t("recurrence.frequency")}</Label>
               <Select
                 value={rule.frequency}
                 onValueChange={(next) =>
@@ -268,10 +315,13 @@ export const RecurrenceEditor = ({
                 }
                 disabled={disabled}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${controlId}-frequency`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {kind === "task" && strategy === "rolling" && onTaskChange ? (
+                    <SelectItem value="hourly">{t("recurrence.frequencyHourly")}</SelectItem>
+                  ) : null}
                   <SelectItem value="daily">{t("recurrence.frequencyDaily")}</SelectItem>
                   <SelectItem value="weekly">{t("recurrence.frequencyWeekly")}</SelectItem>
                   <SelectItem value="monthly">{t("recurrence.frequencyMonthly")}</SelectItem>
@@ -489,15 +539,60 @@ export const RecurrenceEditor = ({
         </div>
       ) : null}
 
-      {kind === "task" && rule && strategy && onStrategyChange ? (
+      {hourly ? (
         <div className="space-y-2">
-          <Label>{t("recurrence.repeatStrategy")}</Label>
+          <Label htmlFor={`${controlId}-limit`}>{t("recurrence.dailyLimit")}</Label>
+          <Input
+            id={`${controlId}-limit`}
+            name="recurrence_limit"
+            type="number"
+            min={1}
+            max={24}
+            step={1}
+            value={limit === null || Number.isNaN(limit) ? "" : limit}
+            placeholder={t("recurrence.unlimited")}
+            ref={(input) =>
+              input?.setCustomValidity(
+                limitInvalid
+                  ? t("recurrence.limitInvalid")
+                  : !hasDueDate
+                    ? t("recurrence.hourlyNeedsDueDate")
+                    : ""
+              )
+            }
+            aria-invalid={limitInvalid || !hasDueDate}
+            aria-describedby={`${controlId}-limit-help ${controlId}-limit-error`}
+            onChange={(event) =>
+              onTaskChange?.({
+                rule: value,
+                strategy: "rolling",
+                limit: event.target.value === "" ? null : event.target.valueAsNumber,
+              })
+            }
+            disabled={disabled}
+          />
+          <p id={`${controlId}-limit-help`} className="text-muted-foreground text-sm">
+            {t("recurrence.hourlyCompletionHelp")}
+          </p>
+          {!hasDueDate || limitInvalid ? (
+            <p id={`${controlId}-limit-error`} role="alert" className="text-destructive text-sm">
+              {t(!hasDueDate ? "recurrence.hourlyNeedsDueDate" : "recurrence.limitInvalid")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {kind === "task" && rule && strategy && (onStrategyChange || onTaskChange) ? (
+        <div className="space-y-2">
+          <Label htmlFor={`${controlId}-strategy`}>{t("recurrence.repeatStrategy")}</Label>
           <Select
             value={strategy}
-            onValueChange={(next) => onStrategyChange(next as TaskListReadRecurrenceStrategy)}
+            onValueChange={(next) => {
+              if (next === "fixed" || next === "rolling") changeStrategy(next);
+            }}
             disabled={disabled}
           >
-            <SelectTrigger>
+            <SelectTrigger id={`${controlId}-strategy`}>
               <SelectValue placeholder={t("recurrence.selectStrategy")} />
             </SelectTrigger>
             <SelectContent>

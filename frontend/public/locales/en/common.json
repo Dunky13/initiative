@@ -76,6 +76,7 @@
   "copyUnavailable": "Could not copy — copy it by hand",
   "untitled": "Untitled",
   "appName": "initiative",
+  "pageTitle": "{{name}} - Initiative",
   "send": "Send",
   "submitting": "Sending…",
   "clear": "Clear",
@@ -329,6 +330,12 @@
     "title": "Page not found",
     "description": "Nothing is at this address. The link may be mistyped, or the page may have moved."
   },
+  "appUpdate": {
+    "ready": "Version {{version}} is ready. Reload to start using it.",
+    "reload": "Reload",
+    "updated": "Updated to version {{version}}.",
+    "whatsNew": "What's new"
+  },
   "nativeUpdate": {
     "unsigned": "This server's update isn't one Initiative published, so the app stays on version {{version}}.",
     "desktopReady": "Initiative has downloaded its update. Restart to finish.",
@@ -366,6 +373,7 @@
     "discard": "Discard",
     "undo": "Undo",
     "moved": "Moved to {{status}}",
+    "typeChanged": "Changed to {{type}}",
     "cleared": "{{field}} cleared"
   },
   "descriptionField": {
@@ -374,7 +382,8 @@
     "unsavedTitle": "Discard unsaved changes?",
     "unsavedBody": "You have an unsaved description. If you leave now, it will be lost.",
     "leave": "Leave",
-    "stay": "Stay"
+    "stay": "Stay",
+    "undoSuggestion": "Undo suggestion"
   },
   "kinds": {
     "project": {

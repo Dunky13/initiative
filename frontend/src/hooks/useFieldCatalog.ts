@@ -18,6 +18,7 @@ import { useReadFieldCatalog } from "@/api/generated/fields/fields";
 import type {
   DatasetName,
   DefaultFilter,
+  GroupingDescription,
   RelationDescription,
 } from "@/api/generated/initiativeAPI.schemas";
 import { type FilterFieldSpec, toFilterFieldSpec } from "@/lib/widgets/conditions";
@@ -27,6 +28,7 @@ export type { DatasetName };
 const EMPTY: FilterFieldSpec[] = [];
 const NO_RELATIONS: RelationDescription[] = [];
 const NO_DEFAULTS: DefaultFilter[] = [];
+const NO_GROUPINGS: GroupingDescription[] = [];
 
 /**
  * The declarations, ready for the controls to read.
@@ -60,6 +62,9 @@ export function useFieldCatalog(dataset: DatasetName) {
      *  removed like any other. The trash is not among them — the query surface
      *  removes it in the database, and no filter can ask for it back. */
     defaultFilters: query.data?.default_filters ?? NO_DEFAULTS,
+    /** The fields a list of the dataset can be grouped by, a date's by a
+     *  bucket of the calendar. */
+    groupings: query.data?.groupings ?? NO_GROUPINGS,
     isLoading: query.isLoading,
   };
 }

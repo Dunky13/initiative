@@ -89,7 +89,9 @@ function Card({ card }: { card: BoardCard }) {
         {(card.date !== undefined || card.caption) && (
           <div className="mt-1 flex items-baseline justify-between gap-2 text-3xs text-muted-foreground">
             <span className="truncate">
-              {card.date === undefined ? "" : formatAxisValue(card.date, "date")}
+              {card.date === undefined
+                ? ""
+                : formatAxisValue(card.date, card.date_only ? "date-only" : "date")}
             </span>
             {card.caption && <span className="shrink-0 tabular-nums">{card.caption}</span>}
           </div>

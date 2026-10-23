@@ -7,8 +7,8 @@ even with billing rows present the operator surface keeps full authority
 over the caps it governs. Pinned here:
 
 1. billing absent = billing off, nothing else changes (endpoints 503;
-   guild lifecycle and cap enforcement work; the membership ping is a
-   no-op — see ``billing_ping_test.py``);
+   guild lifecycle and cap enforcement work; nothing is sent to billing —
+   see ``billing_ping_test.py`` — and its change log is not written);
 2. ``tier_name`` is never an enforcement input (static scan);
 3. operator sovereignty — ``PATCH /settings/communities/{id}`` still fully
    controls caps/status on a guild that has billing metadata;
@@ -48,11 +48,14 @@ from app.testing import (
 def test_billing_settings_default_off():
     """The self-host default: every billing credential/URL is unset."""
     assert settings.BILLING_PUBLIC_KEY_PEM is None
-    assert settings.BILLING_HMAC_SECRET is None
+    assert settings.BILLING_STATEMENT_PUBLIC_KEY_PEM is None
     assert settings.BILLING_SERVICE_URL is None
 
 
-@pytest.mark.parametrize("endpoint", ["community-tier", "usage"])
+@pytest.mark.parametrize(
+    "endpoint",
+    ["communities/sync", "statements", "communities/read", "notices", "changes"],
+)
 async def test_unconfigured_endpoints_fail_closed_503(
     client: AsyncClient, session: AsyncSession, endpoint: str
 ):
@@ -71,13 +74,15 @@ async def test_unconfigured_endpoints_fail_closed_503(
 async def test_partial_configuration_still_fails_closed(
     client: AsyncClient, session: AsyncSession, monkeypatch
 ):
-    """One credential without the other is still OFF — no half-open state."""
+    """One key without the other is still OFF — no half-open state."""
     from app.core import config as config_module
 
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET", "half")
+    monkeypatch.setattr(
+        config_module.settings, "BILLING_STATEMENT_PUBLIC_KEY_PEM", "half"
+    )
     guild = await create_guild(session)
     response = await client.post(
-        "/api/v1/billing/usage",
+        "/api/v1/billing/communities/sync",
         content=json.dumps({"guild_id": guild.id}).encode(),
         headers={"Content-Type": "application/json"},
     )
@@ -117,8 +122,8 @@ async def test_operator_keeps_full_authority_over_billed_guild(
         BillingEventLog(
             event_id="evt-foss-sov",
             guild_id=guild.id,
-            op="guild_tier",
-            source="paddle_webhook",
+            op="community_notice",
+            source="billing",
             applied_at=guild.created_at,
         )
     )

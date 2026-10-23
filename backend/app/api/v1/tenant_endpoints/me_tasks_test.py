@@ -12,6 +12,7 @@ from httpx import AsyncClient
 from sqlalchemy import update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.services.tenant.task_types import get_default_type
 from app.testing import guild_of
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.task import Task, TaskAssignee, TaskPriority
@@ -19,10 +20,13 @@ from app.testing.factories import (
     create_guild,
     create_guild_membership,
     create_initiative,
+    create_initiative_member,
     create_project,
+    create_resource_grant,
     create_user,
     get_auth_headers,
 )
+from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.testing import route_as
 
 
@@ -42,13 +46,16 @@ async def _create_task(
     # Route status setup + the task into the project's guild schema; a prior
     # setup may have left the search_path on a different guild.
     await route_as(session, user_id=created_by, guild_id=guild_of(project))
-    await task_statuses_service.ensure_default_statuses(session, project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     status = await task_statuses_service.get_default_status(session, project.id)
 
     task = Task(
         title=title,
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         created_by=created_by,
         due_date=due_date,
         start_date=start_date,
@@ -109,8 +116,12 @@ async def test_list_my_tasks_assigned_or_created(
     the ones they created instead, whoever they are assigned to."""
     user = await create_user(session, email="user@example.com")
     other = await create_user(session, email="other@example.com")
-    guild, _, project = await _setup_guild_with_project(session, user)
+    guild, initiative, project = await _setup_guild_with_project(session, user)
     await create_guild_membership(session, user=other, guild=guild)
+    await create_initiative_member(session, initiative, other)
+    await create_resource_grant(
+        session, project, level=ResourceAccessLevel.write, user=other
+    )
 
     mine = await _create_task(session, project, "Mine", created_by=user.id)
     await _assign(session, mine, user.id)

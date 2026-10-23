@@ -54,6 +54,7 @@ async def get_project_hydrated(
             selectinload(Project.initiative),
             undefer(Project.actions),
             selectinload(Project.task_statuses),
+            selectinload(Project.task_types),
         )
     )
     if populate_existing:

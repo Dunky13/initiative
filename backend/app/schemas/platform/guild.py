@@ -131,9 +131,6 @@ class NewCommunity(CommunityBase):
     """A community, as somebody names it when they make one."""
 
     name: TitleStr
-    #: A tier from the billing catalog the community starts on, passed to
-    #: billing as given. Ignored where no billing service is configured.
-    plan: Optional[str] = Field(default=None, max_length=64)
 
 
 class CommunityCreate(NewCommunity):
@@ -688,6 +685,10 @@ class CommunityAuthSettingsRead(SanitizedBaseModel):
     #: lately, and whether the deployment allows that at all.
     allow_engagement_ranking: bool = True
     engagement_ranking_allowed_by_platform: bool = True
+    #: Whether AI features may send its content to a provider, and whether the
+    #: deployment offers AI at all.
+    allow_ai: bool = True
+    ai_offered_by_platform: bool = True
     #: The longest a guest may stay, in days, and the deployment's ceiling,
     #: which applies when it is ``None`` or longer.
     guest_max_days: Optional[int] = None
@@ -713,6 +714,7 @@ class CommunityAuthSettingsUpdate(SanitizedBaseModel):
     allow_email_notifications: Optional[bool] = None
     redact_notification_content: Optional[bool] = None
     allow_engagement_ranking: Optional[bool] = None
+    allow_ai: Optional[bool] = None
     #: ``null`` leaves only the deployment's ceiling.
     guest_max_days: Optional[int] = Field(default=None, ge=1)
 

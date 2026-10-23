@@ -22,6 +22,7 @@ from app.schemas.tenant.ownership import OwnerPluginSummary, owner_profile
 from app.schemas.tenant.property import PropertiesOnCreate
 from app.schemas.tenant.tool import ToolSummaryBase
 from app.schemas.tenant.task_status import TaskStatusRead
+from app.schemas.tenant.task_type import TaskTypeRead
 from app.schemas.platform.user import UserPublic
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -79,7 +80,7 @@ class ProjectCan(ToolCan):
 
 class ProjectRead(ProjectBase, ToolSummaryBase):
     # ``validate_by_name`` so ``derived_fields`` can set ``owner``,
-    # ``owner_plugin`` and ``task_statuses`` by name; their aliases keep
+    # ``owner_plugin``, ``task_statuses`` and ``task_types`` by name; their aliases keep
     # ``from_attributes`` from reading an ORM relationship.
     model_config = ConfigDict(validate_by_name=True)
 
@@ -104,6 +105,10 @@ class ProjectRead(ProjectBase, ToolSummaryBase):
     task_statuses: List[TaskStatusRead] = Field(
         default_factory=list, validation_alias="task_statuses_source"
     )
+    #: The project's task types by position, on the same reads.
+    task_types: List[TaskTypeRead] = Field(
+        default_factory=list, validation_alias="task_types_source"
+    )
 
     @classmethod
     def derived_fields(
@@ -117,6 +122,7 @@ class ProjectRead(ProjectBase, ToolSummaryBase):
             "owner": owner_profile(row),
             "owner_plugin": owner_plugin_of(row),
             "task_statuses": _task_statuses(row),
+            "task_types": _task_types(row),
         }
 
 
@@ -139,6 +145,15 @@ def _task_statuses(project: Any) -> List[TaskStatusRead]:
         return []
     statuses = sorted(project.task_statuses, key=lambda s: (s.position, s.id or 0))
     return [TaskStatusRead.model_validate(status) for status in statuses]
+
+
+def _task_types(project: Any) -> List[TaskTypeRead]:
+    """The project's task types by position, or none when the read did not
+    load them."""
+    if "task_types" in sa_inspect(project).unloaded:
+        return []
+    types = sorted(project.task_types, key=lambda t: (t.position, t.id or 0))
+    return [TaskTypeRead.model_validate(task_type) for task_type in types]
 
 
 class ProjectListResponse(PageMeta):

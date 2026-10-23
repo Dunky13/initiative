@@ -56,11 +56,13 @@ from app.models.tenant.comment import Comment, CommentAudience
 from app.models.tenant.intake import DEDUPE_KEY_LENGTH, IntakeBinding, IntakeCase
 from app.models.tenant.project import Project
 from app.models.tenant.property import PropertyDefinition, PropertyType, PropertyValue
-from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory
+from app.models.tenant.task import Task, TaskStatus, TaskStatusCategory, TaskType
 from app.schemas.tenant.property import PropertyValueInput
 from app.services.platform import case_activity, case_notices
 from app.services.tenant import properties as properties_service
 from app.services.tenant import task_creation as task_creation_service
+from app.services.tenant import task_description as task_description_service
+from app.services.tenant import task_types as task_types_service
 from app.db.request_context import SystemGuild
 
 logger = logging.getLogger(__name__)
@@ -447,6 +449,26 @@ async def _landing_status_id(
     return named
 
 
+async def _case_type(
+    session: AsyncSession, binding: IntakeBinding, project: Project
+) -> TaskType:
+    """The type a new case is: the binding's, or the project's default. Checked
+    against the project as the landing status is: the team may delete it."""
+    project_id = int(project.id or 0)
+    if binding.task_type_id is not None:
+        named = await task_types_service.get_project_type(
+            session, binding.task_type_id, project_id
+        )
+        if named is not None:
+            return named
+        logger.warning(
+            "intake binding %s names a type the project no longer has; "
+            "filing as the project default",
+            binding.id,
+        )
+    return await task_types_service.get_default_type(session, project_id)
+
+
 async def open_case(
     stream: IntakeStream,
     *,
@@ -600,14 +622,29 @@ async def open_case(
             if held >= cap:
                 raise CaseCapReached
 
+        # A case starts as its type starts a task, under the body it came with.
+        task_type = await _case_type(session, binding, project)
+        fields: dict[str, object] = {"title": title, "description": body}
+        lines = task_creation_service.start_from_type(
+            task_type,
+            fields,
+            sent={"title", "description"} if body else {"title"},
+        )
         task = await task_creation_service.create_task_row(
             session,
             project=project,
             task_status_id=await _landing_status_id(session, binding, project),
+            task_type_id=task_type.id,
             now=moment,
-            title=title,
-            description=body,
+            checklist=task_creation_service.starting_checklist(lines),
+            **fields,
         )
+        if task.description:
+            # What its description points at lists the case among its
+            # references; nobody wrote it, so it names nobody anew.
+            await task_description_service.record_references(
+                session, task, author_id=None
+            )
         if refs is not None:
             await _record_refs(
                 session,

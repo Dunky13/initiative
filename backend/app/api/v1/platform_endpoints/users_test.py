@@ -703,18 +703,18 @@ async def test_delete_user_as_admin(client, session, acting_user, monkeypatch):
     them: billing hears of it, the member's account stream is told their
     memberships changed, and their contact channels are re-tested. The
     member's platform role plays no part: here they are the platform owner."""
-    from app.services.platform import account_stream, billing_ping
+    from app.services.platform import account_stream
     from app.services.platform import contact_grants as contact_grants_service
+    from app.testing.billing_boundary import change_rows
+    from app.testing.billing_managed import billing_manages_plans
 
     admin = await acting_user(guild_role=CommunityRole.admin)
     member = await acting_user(
         "owner", guild_role=CommunityRole.member, guild=admin.guild
     )
     guild_id, member_id = admin.guild.id, member.user.id
-    pinged: list[int] = []
     signalled: list[tuple[int | None, str]] = []
     swept: list[int | None] = []
-    monkeypatch.setattr(billing_ping, "notify_membership_changed", pinged.append)
     monkeypatch.setattr(
         account_stream,
         "queue_account_signal",
@@ -726,14 +726,17 @@ async def test_delete_user_as_admin(client, session, acting_user, monkeypatch):
         lambda _session, user_id: swept.append(user_id),
     )
 
-    response = await client.delete(
-        admin.g(f"/users/{member_id}"), headers=admin.headers
-    )
-
-    assert response.status_code == 204
-    session.expire_all()
-    assert await session.get(GuildMembership, (guild_id, member_id)) is None
-    assert pinged == [guild_id]
+    async with billing_manages_plans(session):
+        response = await client.delete(
+            admin.g(f"/users/{member_id}"), headers=admin.headers
+        )
+        assert response.status_code == 204
+        session.expire_all()
+        assert await session.get(GuildMembership, (guild_id, member_id)) is None
+        # Billing is told the count changed; it is counted when served.
+        assert await change_rows(session, guild_id, kinds=("community.members",)) == [
+            ("community.members", {})
+        ]
     assert signalled == [(member_id, "membership")]
     assert swept == [member_id]
 
@@ -927,6 +930,31 @@ async def test_task_completion_audio_and_haptic_round_trip(client, acting_user):
         result = response.json()
         assert result["task_completion_audio_feedback"] is value
         assert result["task_completion_haptic_feedback"] is value
+
+
+async def test_smart_task_titles_round_trip(client, acting_user):
+    """Reading a new task's title is on until the account turns it off."""
+    a = await acting_user()
+
+    me = await client.get("/api/v1/me", headers=a.headers)
+    assert me.status_code == 200
+    assert me.json()["smart_task_titles"] is True
+
+    for value in (False, True):
+        response = await client.patch(
+            "/api/v1/me", headers=a.headers, json={"smart_task_titles": value}
+        )
+        assert response.status_code == 200, value
+        assert response.json()["smart_task_titles"] is value
+
+    # Left out of a write, it stays as it was.
+    await client.patch(
+        "/api/v1/me", headers=a.headers, json={"smart_task_titles": False}
+    )
+    response = await client.patch(
+        "/api/v1/me", headers=a.headers, json={"locale": "en"}
+    )
+    assert response.json()["smart_task_titles"] is False
 
 
 def _parse_csv(body: bytes) -> tuple[list[str], list[list[str]]]:

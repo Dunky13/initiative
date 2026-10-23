@@ -153,9 +153,19 @@ async def test_guild_entries_give_each_occurrence_of_a_repeat(
         "start_after": WINDOW_START,
         "start_before": WINDOW_END,
     }
-    # Eight event occurrences, then two task occurrences alone.
-    for leg, budget in (({}, 7), ({"include_events": False}, 1)):
+    # Exactly eight events or two tasks fit; one fewer must refuse the window.
+    for leg, key, budget in (
+        ({}, "events", 8),
+        ({"include_events": False}, "task_occurrences", 2),
+    ):
         monkeypatch.setattr(recurrence, "MAX_EXPANDED", budget)
+        accepted = await client.get(
+            a.g("/calendar-entries/"), headers=a.headers, params={**params, **leg}
+        )
+        assert accepted.status_code == 200, accepted.text
+        assert len(accepted.json()[key]) == budget
+
+        monkeypatch.setattr(recurrence, "MAX_EXPANDED", budget - 1)
         refused = await client.get(
             a.g("/calendar-entries/"), headers=a.headers, params={**params, **leg}
         )
@@ -456,15 +466,20 @@ async def test_me_entries_aggregate_across_guilds(
     assert (g1.id, event1.id) in narrowed_event_keys
     assert (g2.id, event2.id) not in narrowed_event_keys
 
-    # Five weekly occurrences in each guild: either fits alone, not both.
-    monkeypatch.setattr(recurrence, "MAX_EXPANDED", 9)
-    refused = await client.get(
-        "/api/v1/me/calendar-entries",
-        headers=headers,
-        params={"start_after": WINDOW_START, "start_before": WINDOW_END},
-    )
-    assert refused.status_code == 422, refused.text
-    assert refused.json()["detail"] == CalendarEventMessages.WINDOW_TOO_FULL
+    # Five per guild: ten fit exactly; nine or zero left for the second refuse.
+    for budget in (10, 9, 5):
+        monkeypatch.setattr(recurrence, "MAX_EXPANDED", budget)
+        bounded = await client.get(
+            "/api/v1/me/calendar-entries",
+            headers=headers,
+            params={"start_after": WINDOW_START, "start_before": WINDOW_END},
+        )
+        if budget == 10:
+            assert bounded.status_code == 200, bounded.text
+            assert len(bounded.json()["events"]) == 10
+        else:
+            assert bounded.status_code == 422, bounded.text
+            assert bounded.json()["detail"] == CalendarEventMessages.WINDOW_TOO_FULL
 
 
 async def test_me_entries_windows_tasks_by_params(

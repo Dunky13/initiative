@@ -64,9 +64,10 @@ async def _system(session, guild_id: int):
     await set_rls_context(session, SystemGuild(guild_id))
 
 
-async def _moderator(session, guild, level: str = "moderate"):
-    """A platform moderator holding a content grant on ``guild``."""
-    user = await create_user(session, role="moderator")
+async def _moderator(session, guild, level: str = "moderate", role: str = "moderator"):
+    """Platform staff holding a content grant on ``guild``: a moderator, with
+    the moderate grant, unless told otherwise."""
+    user = await create_user(session, role=role)
     await create_access_grant(session, user=user, guild=guild, access_level=level)
     return user
 
@@ -328,7 +329,7 @@ async def test_a_moderate_grantee_reads_what_is_held_and_others_dont(
     assert listed["target_id"] == scene["comment"].id
 
     for level in ("read", "read_write"):
-        other = await _moderator(session, guild, level)
+        other = await _moderator(session, guild, level, role="support")
         seen = await client.get(path, params=params, headers=get_auth_headers(other))
         assert scene["comment"].id not in {c["id"] for c in seen.json()["comments"]}
         holds = await client.get(
@@ -428,7 +429,7 @@ async def test_a_moderator_no_longer_moderating_reads_nothing_held(
     )
 
     await set_rls_context(session, Unattributed())
-    moderator.role = "support"
+    moderator.role = "member"
     session.add(moderator)
     await session.commit()
 
@@ -436,8 +437,9 @@ async def test_a_moderator_no_longer_moderating_reads_nothing_held(
         f"/api/v1/c/{guild.id}/holds", headers=get_auth_headers(moderator)
     )
     assert holds.status_code == 403
+    # The grant itself no longer counts, so the community is out of reach.
     released = await _release(client, moderator, guild, hold["id"], "purge")
-    assert released.status_code == 404
+    assert released.status_code == 403
 
 
 async def test_a_reminder_that_could_not_be_noted_is_tried_again(

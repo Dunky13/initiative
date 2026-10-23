@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
   ListMyProjectsParams,
@@ -10,8 +10,17 @@ import type {
   TaskStatusRead,
   TaskStatusReorderRequest,
   TaskStatusUpdate,
+  TaskTypeCopyRequest,
+  TaskTypeCreate,
+  TaskTypeCreated,
+  TaskTypeDeleteRequest,
+  TaskTypeGalleryGroup,
+  TaskTypeRead,
+  TaskTypeReorderRequest,
+  TaskTypeUpdate,
 } from "@/api/generated/initiativeAPI.schemas";
 import { Tool } from "@/api/generated/initiativeAPI.schemas";
+import { getGetLayoutsQueryKey, putLayout } from "@/api/generated/layouts/layouts";
 import {
   getListProjectsQueryKey,
   getReadProjectQueryKey,
@@ -27,11 +36,24 @@ import {
   reorderTaskStatuses,
   updateTaskStatus,
 } from "@/api/generated/task-statuses/task-statuses";
-import { invalidate, q } from "@/api/query-keys";
+import {
+  copyTaskTypes,
+  createTaskType,
+  deleteTaskType,
+  getListTaskTypeGalleryQueryKey,
+  getListTaskTypesQueryKey,
+  listTaskTypeGallery,
+  listTaskTypes,
+  reorderTaskTypes,
+  updateTaskType,
+} from "@/api/generated/task-types/task-types";
+import { invalidate, q, type Spec } from "@/api/query-keys";
 import { TOOL_HOOKS } from "@/hooks/toolHooks";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useCommunityMutation } from "@/hooks/useApiMutation";
+import { instanceTarget } from "@/hooks/useToolLayouts";
 import { fetchAllPages } from "@/lib/fetchAllPages";
+import { taskPageWithFields } from "@/lib/layouts/tasks";
 import { toolViewParams } from "@/lib/tools";
 import type { MutationOpts } from "@/types/mutation";
 import type { QueryOpts } from "@/types/query";
@@ -90,6 +112,48 @@ export const useProjectTaskStatuses = (
   return useQuery<TaskStatusRead[]>({
     queryKey: getListTaskStatusesQueryKey(communityId, projectId!),
     queryFn: () => listTaskStatuses(communityId, projectId!),
+    enabled: projectId !== null && Number.isFinite(projectId) && userEnabled,
+    ...rest,
+  });
+};
+
+/** The task types of each of these projects, in their order: what a filter
+ *  across several projects picks from. Shares each project's own read. */
+export const useTaskTypesOf = (projectIds: readonly number[]) => {
+  const communityId = useActiveCommunityId();
+  return useQueries({
+    queries: projectIds.map((projectId) => ({
+      queryKey: getListTaskTypesQueryKey(communityId, projectId),
+      queryFn: () => listTaskTypes(communityId, projectId),
+    })),
+  });
+};
+
+/** The ready-made types a project can add, grouped, in the reader's
+ *  language. */
+export const useTaskTypeGallery = (
+  projectId: number,
+  options?: QueryOpts<TaskTypeGalleryGroup[]>
+) => {
+  const communityId = useActiveCommunityId();
+  return useQuery<TaskTypeGalleryGroup[]>({
+    queryKey: getListTaskTypeGalleryQueryKey(communityId, projectId),
+    queryFn: () => listTaskTypeGallery(communityId, projectId),
+    staleTime: Number.POSITIVE_INFINITY,
+    ...options,
+  });
+};
+
+/** A project's task types, in order. */
+export const useProjectTaskTypes = (
+  projectId: number | null,
+  options?: QueryOpts<TaskTypeRead[]>
+) => {
+  const communityId = useActiveCommunityId();
+  const { enabled: userEnabled = true, ...rest } = options ?? {};
+  return useQuery<TaskTypeRead[]>({
+    queryKey: getListTaskTypesQueryKey(communityId, projectId!),
+    queryFn: () => listTaskTypes(communityId, projectId!),
     enabled: projectId !== null && Number.isFinite(projectId) && userEnabled,
     ...rest,
   });
@@ -225,6 +289,102 @@ export const useReorderTaskStatuses = (
     {
       mutationFn: (communityId, data) => reorderTaskStatuses(communityId, projectId, data),
       invalidate: () => invalidate(q.projectTaskStatuses(projectId)),
+    },
+    options
+  );
+
+// ── Task Type Mutations ─────────────────────────────────────────────────────
+
+/** A project's types are read twice: their own list, and on the project. */
+const invalidateTaskTypes = (projectId: number, ...more: Spec[]) =>
+  invalidate(q.projectTaskTypes(projectId), q.project(projectId), ...more);
+
+/** Adding a type. One started from another gets a copy of that type's page,
+ *  so the project's layouts read anew. */
+export const useCreateTaskType = (
+  projectId: number,
+  options?: MutationOpts<TaskTypeCreated, TaskTypeCreate>
+) =>
+  useCommunityMutation<TaskTypeCreated, TaskTypeCreate>(
+    {
+      mutationFn: (communityId, data) => createTaskType(communityId, projectId, data),
+      invalidate: () => invalidateTaskTypes(projectId, q.layouts()),
+    },
+    options
+  );
+
+/** Give a ready-made type's fields a place on its page: its shape's, with
+ *  them at the end of the side's first section. Rejects when the page could
+ *  not be saved; the type stands either way. */
+export const usePlaceTaskTypeFields = (projectId: number) => {
+  const communityId = useActiveCommunityId();
+  const queryClient = useQueryClient();
+  return async (created: TaskTypeCreated) => {
+    const target = instanceTarget(Tool.project, projectId);
+    const set = await putLayout(
+      communityId,
+      {
+        kind: "task",
+        task_type_id: created.id,
+        definition: taskPageWithFields(created.layout_preset, created.field_ids),
+      },
+      target
+    );
+    queryClient.setQueryData(getGetLayoutsQueryKey(communityId, target), set);
+    void invalidate(q.initiativeLayouts());
+  };
+};
+
+/** Copying types from another project, each with its page. */
+export const useCopyTaskTypes = (
+  projectId: number,
+  options?: MutationOpts<TaskTypeRead[], TaskTypeCopyRequest>
+) =>
+  useCommunityMutation<TaskTypeRead[], TaskTypeCopyRequest>(
+    {
+      mutationFn: (communityId, data) => copyTaskTypes(communityId, projectId, data),
+      invalidate: () => invalidateTaskTypes(projectId, q.layouts()),
+    },
+    options
+  );
+
+/** Changing a type. Every task of it carries its name, look and shape, so
+ *  the tasks read anew too. */
+export const useUpdateTaskType = (
+  projectId: number,
+  options?: MutationOpts<TaskTypeRead, { typeId: number; data: TaskTypeUpdate }>
+) =>
+  useCommunityMutation<TaskTypeRead, { typeId: number; data: TaskTypeUpdate }>(
+    {
+      mutationFn: (communityId, { typeId, data }) =>
+        updateTaskType(communityId, projectId, typeId, data),
+      invalidate: () => invalidateTaskTypes(projectId, q.allTasks()),
+    },
+    options
+  );
+
+/** Deleting a type moves its tasks to another and takes its page with it. */
+export const useDeleteTaskType = (
+  projectId: number,
+  options?: MutationOpts<void, { typeId: number; data: TaskTypeDeleteRequest }>
+) =>
+  useCommunityMutation<void, { typeId: number; data: TaskTypeDeleteRequest }>(
+    {
+      mutationFn: (communityId, { typeId, data }) =>
+        deleteTaskType(communityId, projectId, typeId, data),
+      invalidate: () => invalidateTaskTypes(projectId, q.allTasks(), q.layouts()),
+    },
+    options
+  );
+
+export const useReorderTaskTypes = (
+  projectId: number,
+  options?: MutationOpts<TaskTypeRead[], TaskTypeReorderRequest>
+) =>
+  useCommunityMutation<TaskTypeRead[], TaskTypeReorderRequest>(
+    {
+      mutationFn: (communityId, data) => reorderTaskTypes(communityId, projectId, data),
+      invalidate: () => invalidateTaskTypes(projectId),
     },
     options
   );

@@ -311,6 +311,9 @@ def logging_config() -> dict[str, Any]:
             # Every outgoing request is logged once, by ``services.safe_http``.
             "httpx": {"level": "WARNING"},
             "httpcore": {"level": "WARNING"},
+            # The Anthropic SDK's own copy of the same library.
+            "httpx2": {"level": "WARNING"},
+            "httpcore2": {"level": "WARNING"},
         },
     }
 

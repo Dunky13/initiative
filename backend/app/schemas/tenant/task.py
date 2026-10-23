@@ -1,6 +1,6 @@
 from datetime import datetime
 from string import ascii_letters, digits
-from typing import Final, List, Literal, Optional
+from typing import Final, List, Optional
 from uuid import uuid4
 
 from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
@@ -15,7 +15,7 @@ from app.schemas.base import (
     reject_null,
 )
 from app.schemas.query import PageMeta
-from app.schemas.recurrence import OccurrenceScope, TaskRule
+from app.schemas.recurrence import OccurrenceScope, TaskRule, validate_task_recurrence
 
 from app.schemas.platform.access_grant import AccessGrantRead
 from app.schemas.platform.user import PersonShape, UserPublic
@@ -23,6 +23,7 @@ from app.schemas.tenant.evidence import EvidenceRead
 from app.schemas.tenant.plugin_data import PluginValueSummary
 from app.schemas.tenant.initiative import InitiativeSummary
 from app.schemas.tenant.task_status import TaskStatusRead
+from app.schemas.tenant.task_type import TaskTypeRead
 from app.schemas.tenant.tag import TagSummary
 from app.schemas.tenant.property import (
     PropertiesOnCreate,
@@ -31,7 +32,7 @@ from app.schemas.tenant.property import (
 )
 
 from app.core.intake import Conversation, IntakeStream
-from app.models.tenant.task import TaskPriority, TaskStatusCategory
+from app.models.tenant.task import RecurrenceStrategy, TaskPriority, TaskStatusCategory
 from app.models.platform.user import UserStatus
 
 
@@ -122,7 +123,8 @@ class TaskBase(SanitizedBaseModel):
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
     recurrence: Optional[str] = None
-    recurrence_strategy: Literal["fixed", "rolling"] = "fixed"
+    recurrence_strategy: RecurrenceStrategy = RecurrenceStrategy.fixed
+    recurrence_limit: Optional[int] = Field(default=None, ge=1, le=24, strict=True)
 
 
 class TaskCreate(TaskBase, PropertiesOnCreate):
@@ -135,8 +137,20 @@ class TaskCreate(TaskBase, PropertiesOnCreate):
     tz: Optional[str] = Field(default=None, max_length=64)
     assignee_ids: List[PersonId] = Field(default_factory=list)
     task_status_id: Optional[int] = None
+    #: One of the project's task types; its default when not given.
+    task_type_id: Optional[int] = None
     tag_ids: List[int] = Field(default_factory=list, max_length=100)
     checklist: List[ChecklistItemInput] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _valid_recurrence(self) -> "TaskCreate":
+        validate_task_recurrence(
+            rule=self.recurrence,
+            strategy=self.recurrence_strategy,
+            limit=self.recurrence_limit,
+            due=self.due_date,
+        )
+        return self
 
 
 class TaskUpdate(PropertiesOnUpdate):
@@ -147,6 +161,9 @@ class TaskUpdate(PropertiesOnUpdate):
     #: ``DESCRIPTION_CHANGED``.
     description_base: Optional[RichMentionStr] = None
     task_status_id: Optional[int] = None
+    #: Another of the project's task types. Nothing the task holds is lost:
+    #: what the new type's page does not show is kept, not cleared.
+    task_type_id: Optional[int] = None
     #: Move the task to its project's column of this category (the nearest
     #: one before it where the project has none), for a caller that knows
     #: "done" but not which column that is. Ignored with ``task_status_id``,
@@ -167,7 +184,8 @@ class TaskUpdate(PropertiesOnUpdate):
     #: The zone ``recurrence``'s days were picked in, and ``recurrence_shift``
     #: is taken from it. Omitted, the rule's days are UTC days.
     tz: Optional[str] = Field(default=None, max_length=64)
-    recurrence_strategy: Optional[Literal["fixed", "rolling"]] = None
+    recurrence_strategy: Optional[RecurrenceStrategy] = None
+    recurrence_limit: Optional[int] = Field(default=None, ge=1, le=24, strict=True)
     # PATCH semantics: None = "leave unchanged"; a list (incl. []) = replace-all.
     tag_ids: Optional[List[int]] = Field(default=None, max_length=100)
     checklist: Optional[List[ChecklistItemInput]] = None
@@ -218,6 +236,9 @@ class TaskRead(TaskBase):
     project_id: int
     task_status_id: int
     task_status: TaskStatusRead
+    #: Which of its project's task types the task is.
+    task_type_id: int
+    task_type: TaskTypeRead
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
@@ -230,6 +251,8 @@ class TaskRead(TaskBase):
     assignees: List[UserPublic] = []
     recurrence_occurrence_count: int = 0
     recurrence_shift: int = 0
+    recurrence_anchor: Optional[datetime] = None
+    recurrence_anchor_count: int = Field(default=0, ge=0)
     #: No occurrence of the series starts after this; None while it goes on.
     recurrence_until: Optional[datetime] = None
     #: The first task of the repeating series; None until the series moves on.
@@ -267,6 +290,9 @@ class TaskListRead(TaskBase):
     project_id: int
     task_status_id: int
     task_status: TaskStatusRead
+    #: Which of its project's task types the task is.
+    task_type_id: int
+    task_type: TaskTypeRead
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
@@ -276,6 +302,8 @@ class TaskListRead(TaskBase):
     assignees: List[TaskAssigneeSummary] = []
     recurrence_occurrence_count: int = 0
     recurrence_shift: int = 0
+    recurrence_anchor: Optional[datetime] = None
+    recurrence_anchor_count: int = Field(default=0, ge=0)
     #: No occurrence of the series starts after this; None while it goes on.
     recurrence_until: Optional[datetime] = None
     comment_count: int = 0

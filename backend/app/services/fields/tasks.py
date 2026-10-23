@@ -46,8 +46,11 @@ _INTERNAL = frozenset(
         "recurrence",
         "recurrence_until",
         "recurrence_shift",
+        "recurrence_anchor",
+        "recurrence_anchor_count",
         "recurrence_strategy",
         "recurrence_occurrence_count",
+        "recurrence_limit",
         "series_id",
     }
 )
@@ -225,6 +228,7 @@ def _computed() -> tuple[FieldSpec, ...]:
             sort=_date_group,
             filterable=False,
             sortable=True,
+            buckets=True,
         ),
         # Orderings with nothing to filter: a status is picked by its id or
         # category, and a tag by its id.
@@ -316,6 +320,10 @@ _RELATIONS: tuple[Relation, ...] = (
         hops=(Hop(dataset="task_statuses", left="task_status_id", right="id"),),
     ),
     Relation(
+        name="type",
+        hops=(Hop(dataset="task_types", left="task_type_id", right="id"),),
+    ),
+    Relation(
         name="project",
         hops=(Hop(dataset="projects", left="project_id", right="id"),),
     ),
@@ -332,6 +340,9 @@ def build() -> Dataset:
         model=Task,
         tool=Tool.project,
         name_override="tasks",
-        fields=derive_fields(Task, internal=_INTERNAL) + _computed(),
+        fields=derive_fields(
+            Task, internal=_INTERNAL, descending=frozenset({"priority"})
+        )
+        + _computed(),
         relations=_RELATIONS,
     )

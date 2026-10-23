@@ -31,7 +31,7 @@ async def test_a_preview_lists_the_next_starts(client, acting_user):
     refused = await client.post(
         "/api/v1/recurrence/preview",
         headers=a.headers,
-        json={**picked, "rule": "FREQ=HOURLY", "kind": "task"},
+        json={**picked, "rule": "FREQ=DAILY;BYHOUR=9", "kind": "task"},
     )
     assert refused.status_code == 422
     assert refused.json()["detail"] == "RECURRENCE_INVALID"

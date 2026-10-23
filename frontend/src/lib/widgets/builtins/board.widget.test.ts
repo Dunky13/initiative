@@ -89,6 +89,15 @@ describe("columns", () => {
 });
 
 describe("cards", () => {
+  it("carries the mapped SQL DATE kind through scene validation", async () => {
+    const data = rows([["A calendar day", "Backlog", T0, "Ada"]]);
+    data.columns = data.columns.map((column) =>
+      column.name === "due" ? { ...column, date_only: true } : column
+    );
+    const scene = await draw(data);
+    expect(scene.columns[0].cards[0]).toMatchObject({ date: T0, date_only: true });
+  });
+
   it("titles a card from the mapped card column", async () => {
     const scene = await draw(work);
     const backlog = scene.columns.find((column) => column.label === "Backlog");

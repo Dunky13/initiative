@@ -27,6 +27,9 @@ from app.models.platform.guild import CommunityRole
 from app.services import sweep_timers
 from app.services.marketplace import plugin_entitlements, tuf_registry
 from app.services.platform import billing_ping
+from app.testing.billing_boundary import served_changes
+from app.testing.billing_boundary import configure_outbound
+from app.testing.billing_managed import billing_manages_plans
 from app.services.tenant import plugin_connection_flows as flows
 from app.testing import (
     billing_guild_ref,
@@ -51,17 +54,17 @@ def _definition() -> dict:
     }
 
 
-async def _hold(guild_id: int, values: dict) -> str:
-    """Keep a version-1 statement of ``values`` for the community, as the
+async def _hold(guild_id: int, values: dict, *, version: int = 1) -> str:
+    """Keep a statement of ``values`` for the community at ``version``, as the
     billing verb would; the signed statement is returned."""
     statement = entitlement_statement(
         community_ref=await billing_guild_ref(guild_id),
         listing_uid=SERVICE_UID,
-        version=1,
+        version=version,
         values=values,
     )
     await plugin_entitlements.store_statement(
-        guild_id, SERVICE_UID, statement=statement, version=1, values=values
+        guild_id, SERVICE_UID, statement=statement, version=version, values=values
     )
     return statement
 
@@ -103,8 +106,7 @@ def billing(monkeypatch):
         answer: dict | None = None
         delay: float = 0.0
 
-    monkeypatch.setattr(config_module.settings, "BILLING_SERVICE_URL", BILLING)
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET", "secret")
+    configure_outbound(monkeypatch, BILLING)
     monkeypatch.setattr(config_module.settings, "BILLING_URL", PORTAL)
     Billing.sent = []
 
@@ -176,13 +178,61 @@ class TestGating:
         assert response.status_code == 409
         assert response.json()["detail"] == GuildPluginMessages.ENTITLEMENT_REQUIRED
 
+    async def test_a_full_term_shows_a_request_and_never_hides_the_listing(
+        self, client: AsyncClient, acting_user, entitled, billing
+    ):
+        """Billing marks a community the deployment's term has no seat for:
+        the listing is still shown, with a request rather than a purchase, and
+        it still doesn't install."""
+        a = await _seat(acting_user)
+        await _hold(a.guild.id, {"active": False, "reason": "term_full"})
+
+        detail = await client.get(
+            a.g(f"/marketplace/listings/by-uid/{SERVICE_UID}"), headers=a.headers
+        )
+        browse = await client.get(
+            a.g("/marketplace/listings"), headers=a.headers, params={"kind": "plugin"}
+        )
+        install = await _install(client, a)
+
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["unavailable"] == {
+            "reason": "term_full",
+            "action_url": None,
+        }
+        assert [
+            item["unavailable"]
+            for item in browse.json()["items"]
+            if item["uid"] == SERVICE_UID
+        ] == [{"reason": "term_full", "action_url": None}]
+        assert install.status_code == 409
+
+    async def test_an_install_whose_term_fills_says_so_on_its_page(
+        self, client: AsyncClient, acting_user, entitled, billing, hooks
+    ):
+        """The plug-in's page reads the statement held for the install: once
+        billing marks the term full, the page shows the request in place of
+        the plug-in."""
+        a = await _seat(acting_user)
+        await _hold(a.guild.id, {"active": True})
+        installed = await _install(client, a)
+        assert installed.status_code == 201, installed.text
+        page = a.g(f"/plugins/{installed.json()['id']}")
+
+        working = await client.get(page, headers=a.headers)
+        await _hold(a.guild.id, {"active": False, "reason": "term_full"}, version=2)
+        full = await client.get(page, headers=a.headers)
+
+        assert working.json()["entitlement"] == {"active": True, "reason": None}
+        assert full.json()["entitlement"] == {"active": False, "reason": "term_full"}
+
     async def test_the_catalog_says_it_is_unavailable_and_where_to_go(
         self, client: AsyncClient, acting_user, entitled, billing
     ):
         a = await _seat(acting_user)
         expected = {
             "reason": "entitlement_required",
-            "action_url": f"{PORTAL}/manage?community={a.guild.id}&app={SERVICE_UID}",
+            "action_url": f"{PORTAL}/manage?app={SERVICE_UID}",
         }
 
         detail = await client.get(
@@ -251,33 +301,37 @@ class TestGating:
 # --- install pings -----------------------------------------------------------------
 
 
-class TestInstallPings:
+class TestInstallChanges:
+    """Billing hears of installs and uninstalls from its change log, and only
+    of listings a package names terms for."""
+
     async def test_installing_and_removing_tell_billing(
-        self, client: AsyncClient, acting_user, entitled, billing, hooks
+        self, client: AsyncClient, session: AsyncSession, acting_user, entitled, hooks
     ):
         a = await _seat(acting_user)
         await _hold(a.guild.id, {"active": True})
         ref = await billing_guild_ref(a.guild.id)
 
-        installed = await _install(client, a)
-        removed = await client.delete(
-            a.g(f"/plugins/{installed.json()['id']}"), headers=a.headers
-        )
-        await _settle()
-
-        assert removed.status_code == 204, removed.text
-        pings = [
-            (url, {k: v for k, v in body.items() if k != "event_id"})
-            for url, body in billing.sent
-        ]
-        assert pings == [
-            (
-                f"{BILLING}/api/v1/pings/install",
-                {"community_ref": ref, "listing_uid": SERVICE_UID, "event": event},
+        async with billing_manages_plans(session):
+            installed = await _install(client, a)
+            # The install index follows the installs on its sweep.
+            await sweep_timers.process_due_timers()
+            removed = await client.delete(
+                a.g(f"/plugins/{installed.json()['id']}"), headers=a.headers
             )
-            for event in ("installed", "uninstalled")
+            await _settle()
+            await sweep_timers.process_due_timers()
+            assert removed.status_code == 204, removed.text
+            served, _cursor = await served_changes()
+
+        assert [
+            (c["kind"], c["community_ref"], c["listing_uid"])
+            for c in served
+            if c["kind"].startswith("plugin.")
+        ] == [
+            ("plugin.installed", ref, SERVICE_UID),
+            ("plugin.uninstalled", ref, SERVICE_UID),
         ]
-        assert all(body["event_id"] for _, body in billing.sent)
 
     async def test_a_listing_without_terms_tells_nobody(
         self,
@@ -285,7 +339,6 @@ class TestInstallPings:
         acting_user,
         session: AsyncSession,
         registered,
-        billing,
     ):
         await create_marketplace_listing(
             session,
@@ -296,14 +349,17 @@ class TestInstallPings:
         )
         a = await _seat(acting_user)
 
-        installed = await _install(client, a)
-        await client.delete(
-            a.g(f"/plugins/{installed.json()['id']}"), headers=a.headers
-        )
-        await _settle()
+        async with billing_manages_plans(session):
+            installed = await _install(client, a)
+            await client.delete(
+                a.g(f"/plugins/{installed.json()['id']}"), headers=a.headers
+            )
+            await _settle()
+            await sweep_timers.process_due_timers()
+            served, _cursor = await served_changes()
 
         assert installed.status_code == 201, installed.text
-        assert billing.sent == []
+        assert [c for c in served if c["kind"].startswith("plugin.")] == []
 
 
 # --- the uninstall notice ----------------------------------------------------------
@@ -364,7 +420,7 @@ class TestUninstallNotice:
         assert response.json() == {
             "managed": True,
             "message": None,
-            "action_url": f"{PORTAL}/manage?community={a.guild.id}&app={SERVICE_UID}",
+            "action_url": f"{PORTAL}/manage?app={SERVICE_UID}",
         }
 
     async def test_an_unreadable_answer_is_neutral_text(

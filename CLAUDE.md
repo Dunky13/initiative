@@ -50,6 +50,7 @@ history/
 - `cd frontend && pnpm install && pnpm dev` — launch the Vite dev server (uses `VITE_API_URL`, defaults to `http://localhost:8000/api/v1`).
 - `cd frontend && pnpm build:editor-server` — build the document editor the backend runs (`frontend/dist-editor/editor.js`, read by `app/services/editor_engine.py`). The image and CI build it; locally, the backend tests that use it fail until it is built.
 - **Dev ports are per checkout.** The main working tree keeps `8000`/`5173`; each linked worktree is allocated the lowest free offset (`8001`/`5174`, `8002`/`5175`, …), so several agents can run a dev environment at once. `scripts/dev-ports.sh` is the single source of truth — every dev script sources it, and it exports `DEV_BACKEND_PORT`, `DEV_FRONTEND_PORT`, `VITE_API_URL`, `VITE_DEV_PROXY_TARGET` and per-checkout log paths. Offsets live in `~/.cache/initiative/dev-ports`, keyed by checkout path: a checkout keeps its ports for as long as it exists, and a deleted one's slot is reused. There is no derived fallback — if the registry can't be read or written the dev scripts stop and say so, because a guessed pair could already be another checkout's. Pin a checkout by setting `DEV_BACKEND_PORT`/`DEV_FRONTEND_PORT` yourself. The VSCode "Dev Environment" debug config works in any worktree: launch.json cannot run a shell, so it starts `backend/scripts/dev_api.py`, which asks `dev-ports.sh` for the port and runs uvicorn in-process. Starting a dev environment on a port something else already holds reports it and stops, rather than taking the port.
+- `.mcp.json` gives agents a `browser` MCP server: `@playwright/mcp`, pinned in `frontend` devDependencies to the release built on the same Playwright minor as `@playwright/test`, running headless on the Chromium `pnpm exec playwright install chromium` downloads (no Google Chrome needed). `frontend/src/__tests__/playwrightMcp.test.ts` fails when the two drift apart; bump them together.
 - `docker-compose up --build` — start Postgres 17 and the app image (API and SPA from one uvicorn).
 - `cd backend && pytest` / `ruff check app` and `cd frontend && pnpm lint` — run tests and linters. Tests are co-located alongside source files in `app/` (not in a separate `tests/` directory).
 - `scripts/ci/check` — the fast checks CI runs (ruff, ruff format, ty, frozen migrations and one Alembic head, biome, tsc, and generated-types / `env-contract.json` drift), for what the branch changed against `origin/dev`. CI calls the same script for those steps, and the husky pre-push hook runs it (`git push --no-verify` skips it once). No tests and no database. `scripts/ci/check all` runs everything; `scripts/ci/check codegen` regenerates drifted files for you to review and commit.
@@ -198,6 +199,32 @@ git log --oneline --grep="bump version" -n 1
 - ❌ Do NOT add changelog entries for minor refactoring or internal changes
 - ❌ Do NOT put new changes under an already-released version number
 
+#### Screenshots
+
+A change people will want to see can carry a picture, shown under its bullet
+in the version dialog and on **What's new**, in light or dark to match the app.
+
+1. Add a shot in `frontend/e2e/shots/<name>.shot.ts`: walk to the screen, then
+   `await shoot(page, "<name>")` (or `shoot(page, "<name>", locator)` for one
+   part of it). `gantt.shot.ts` is the example; `barovia.ts` walks to the
+   seed's best-filled project.
+2. With the dev environment running on its seed data, run
+   `cd frontend && pnpm screenshots` (or `pnpm screenshots e2e/shots/<name>.shot.ts`).
+   It signs in as `admin1@example.com` and writes
+   `docs/images/releases/<name>.webp` and `<name>.dark.webp`.
+3. Look them over, then put the picture under its bullet, by its repository path
+   so GitHub draws it too:
+   `![What it shows](docs/images/releases/<name>.webp)`.
+   Several pictures on consecutive lines under one bullet become a strip that
+   scrolls sideways, each opening in the lightbox.
+
+The pictures live with the help center, so GitHub Pages publishes them when the
+release reaches `main` and the app loads them from there
+(`frontend/src/lib/releaseImages.ts`); no install or app update carries them.
+Name a picture for what it shows, not the release; a name already used would
+replace a released picture. `releaseImages.test.ts` fails when a picture the
+changelog names is missing either theme or its alt text.
+
 ### Announcements
 
 The changelog is the record; an **announcement** is the interruption. It is a
@@ -329,6 +356,8 @@ All `HTTPException` detail strings must use constants from `backend/app/core/mes
 
 Python uses 4-space indentation, full type hints, `snake_case` modules/functions, and `PascalCase` SQLModel or schema classes; keep routing thin and push validation to `schemas` and `services`. React components are `PascalCase` files, hooks follow the `useThing` convention, and shared helpers live in `frontend/src/lib` or `api`. Ruff and ESLint must pass before opening a PR.
 
+**Extend before adding.** Before adding a strategy, enum value, column or service, find the mechanism that already does most of it and extend that: a task that repeats "after completion" is the existing `rolling` strategy, not a new one. A request or issue that names a shape (a stored timezone, a new mode) describes the need, not the design; when the existing mechanism covers it differently, say so instead of building the shape as written. A new kind of thing needs a maintainer's agreement on an issue first.
+
 ### Security-sensitive comments
 
 **Do not write code comments that reference direct security issues** — specific vulnerabilities, exploit or bypass mechanisms, "without this an attacker could…" narratives, or step-by-step descriptions of how a control could be defeated. This source is public, so such comments are an attack-targeting surface: they hand an attacker a roadmap. Keep comments to **simple functional explanations** of what the code does and why, not how a protection works internally or how it could fail. Put exploit-level detail in the private issue tracker or a security doc, not inline.
@@ -386,6 +415,8 @@ therefore also runs with `fsync=off`, `full_page_writes=off`,
 `synchronous_commit=off`, `wal_level=minimal`, `max_wal_senders=0` and
 `max_wal_size=512MB` — safe for a cluster holding only the dev database and
 throwaway test databases, and not something to copy into any deployment.
+CI's test cluster turns off the first three as well (`.github/actions/test-database`):
+with them on, every checkpoint of a full run synced hundreds of thousands of files.
 
 **Which backend tests a pull request runs.** CI picks one of two modes in its
 Detect Changes job, and the run's summary page says which:
@@ -490,6 +521,9 @@ cd frontend && pnpm test:run
 # The browser journeys (frontend/e2e/*.journey.ts) against a fresh install:
 # start docker-compose.example.yml with the image to check, then
 cd frontend && pnpm exec playwright install chromium && JOURNEYS_URL=http://localhost:8173 pnpm test:journeys
+
+# The release screenshots (frontend/e2e/shots), of the running dev environment
+cd frontend && pnpm screenshots
 
 # Run frontend tests in watch mode
 cd frontend && pnpm test
@@ -620,7 +654,7 @@ Guild **content** (projects, tasks, documents, initiatives, queues, counters, ca
 
 - **Per-guild roles** `guild_<id>` (read/write its schema), `guild_<id>_ro` (SELECT-only, for PAM *read* grants), `guild_<id>_support` (a scoped `read_write` grant), `guild_<id>_q` (the query surface), `guild_<id>_superadmin` (the seat, below) and `guild_<id>_plugin` (a plug-in acting as its community: grants rendered from `app/db/plugin_rls.py` `PLUGIN_TABLE_ACCESS` only, over the **`plugin_install_base`** floor). The rest inherit shared/`public` access from **`app_guild_base`** or its read-only twin **`app_guild_base_ro`**. The login roles are granted membership in every guild role **`WITH INHERIT FALSE`** — they can `SET ROLE` in but hold no standing access (fail-closed).
 - **The seat's role and its floor.** A community's own sign-in configuration is written by `guild_<id>_superadmin`, which inherits `guild_<id>` (the full guild role, composed rather than granted afresh) and **`app_superadmin`** (the one shared floor holding `guild_auth_policies` writable). A request assumes it by **asking for it** — `SeatSessionDep`, which the configuration routes take — **and holding it**: the membership row says `superadmin`, or a live `superadmin` settings grant does. Holding the seat is not using it, so an ordinary content request by a seat holder routes as `guild_<id>` and carries none of those grants. `app_superadmin` takes **no** default privileges: a new shared table reaches it only through its registry record's `app_superadmin` grant and a migration.
-- **Platform-tier roles** `platform_<tier>` (member/support/moderator/operator/owner, `NOLOGIN`) + a shared **`platform_base`** floor; the public/platform path assumes `platform_<users.role>`. A **suspended** account assumes **`platform_suspended`** instead, whatever its tier: it inherits only **`platform_base_ro`**, the read half of `platform_base` (its `SELECT`s, and the `SELECT` side of every policy granted to `platform_base`, derived in `public_rls.py`), so it reads its own rows and writes nothing.
+- **Platform-tier roles** `platform_<tier>` (member/moderator/support/operator/owner, `NOLOGIN`) + a shared **`platform_base`** floor; the public/platform path assumes `platform_<users.role>`. A **suspended** account assumes **`platform_suspended`** instead, whatever its tier: it inherits only **`platform_base_ro`**, the read half of `platform_base` (its `SELECT`s, and the `SELECT` side of every policy granted to `platform_base`, derived in `public_rls.py`), so it reads its own rows and writes nothing.
 - **Routing:** a **guild request** (`/c/{community_id}/…`) → `SET ROLE guild_<id>` (or `_ro`), `search_path = guild_<id>, public`; a **public/platform request** → `SET ROLE platform_<tier>`, `search_path = public`. Each request resets to the login role (`SET ROLE none`) first, and the connection is reset on return to the pool.
 - **No standing all-guild bypass for users, no superadmin.** The `app.is_superadmin` GUC and its policy legs were removed entirely (migration 0126, the post-squash reconciler). The only BYPASSRLS holder is the system engine (`app_admin`, the standard trusted-batch role — grant-bounded, never serving a user request as itself). A platform operator reaches a guild's data only via an explicit **break-glass** grant (below).
 
@@ -641,16 +675,16 @@ The active guild is **addressed in the URL** (`/c/{community_id}/…`), never se
 
 ### Platform privilege ladder & capabilities
 
-The 5-rung ladder (`member → support → moderator → operator → owner`, stored in `users.role`) maps to a capability set in [`capabilities.py`](backend/app/core/capabilities.py). Gate platform endpoints on a **capability** via `require_capability(...)`, never a role name; the frontend mirrors the capability strings in [`permissions.ts`](frontend/src/lib/permissions.ts) (reads backend-computed `UserRead.capabilities`). `config.manage` (owner-only) gates app config (OIDC, SMTP, branding, role labels, platform AI) under `/settings/platform`. The first/bootstrap user becomes `owner`; never leave the platform without a `config.manage` holder (`is_last_capability_holder`).
+The 5-rung ladder (`member → moderator → support → operator → owner`, stored in `users.role`) maps to a capability set in [`capabilities.py`](backend/app/core/capabilities.py). Gate platform endpoints on a **capability** via `require_capability(...)`, never a role name; the frontend mirrors the capability strings in [`permissions.ts`](frontend/src/lib/permissions.ts) (reads backend-computed `UserRead.capabilities`). `config.manage` (owner-only) gates app config (OIDC, SMTP, branding, role labels, platform AI) under `/settings/platform`. The first/bootstrap user becomes `owner`; never leave the platform without a `config.manage` holder (`is_last_capability_holder`).
 
 ### Break-glass & PAM (cross-guild access without a standing bypass)
 
 A user reaches a guild they don't belong to only through a **time-bound, per-guild, audited grant** (`access_grants` table, `/api/v1/access-grants`), routed through that guild's own `guild_<id>_ro`/`guild_<id>` roles + `pam_*` GUCs — never BYPASSRLS:
 
-- **support / moderator** (`access.request`): request → an approver (`access.approve`) grants/denies → auto-expires. Read-only by default; a `read_write` grant edits *existing* content only (no authoring or member/permission management). A `moderate` grant reads everything including held content and edits nothing; only a `content.moderate` holder may request it, and it is never self-issued.
+- **moderator / support** (`access.request`): request → an approver (`access.approve`) grants/denies → auto-expires. Read-only by default; a `read_write` grant edits *existing* content only (no authoring or member/permission management). A `moderate` grant reads everything including held content and edits nothing; only a `content.moderate` holder may request it, and it is never self-issued. Every other grant needs `access.request_any`, which a moderator does not hold: the moderator rung is moderation only.
 - **operator / owner** (`data.bypass`): self-issue a **break-glass** grant (`POST /access-grants/break-glass`) — created **and** self-approved in one step (the row is the audit trail), short TTL. Break-glass is **a pair of grants, not an admin**: a content grant (`read` for full read-only of the guild, `read_write` to edit *existing* content) and, beside it, a `superadmin` settings grant for the community's own configuration. Neither makes the holder a guild admin — `app.guild_admin` is computed from the membership row and no grant sets it — so authoring, member management and permission changes stay closed. `data.bypass` is the *right to break glass*, not a standing bypass; with it removed, an operator reaches a guild only after clicking through.
 
-**How a grant reaches a request.** The establishment seam is the only reader of `access_grants`: it looks the live rows up, routes into `guild_<id>_ro` (a read grant) or the restricted `guild_<id>_support` role (`read_write`), and its standing statement recomputes `app.pam_read` / `app.pam_write` from those same rows, in the database, so what the ~200 PAM policy legs read was written from a row rather than from a variable. Revoking or expiring a grant changes the next request's standing with no other write.
+**How a grant reaches a request.** The establishment seam is the only reader of `access_grants`: it looks the live rows up, routes into `guild_<id>_ro` (a read grant) or the restricted `guild_<id>_support` role (`read_write`), and its standing statement recomputes `app.pam_read` / `app.pam_write` from those same rows, in the database, so what the ~200 PAM policy legs read was written from a row rather than from a variable. Revoking or expiring a grant changes the next request's standing with no other write. A grant also counts only while its holder's platform rung may hold it (`may_hold_grant` in `capabilities.py`): the lookup and the standing statement both read the rung as it stands, so a demotion ends what the new rung cannot hold.
 
 ### Rules for writing backend endpoints
 
@@ -756,8 +790,8 @@ those, but the check reads the file list, so leave released files alone.
 
 - Guilds are the primary tenancy boundary. Every user can join multiple guilds; the guild a request operates in is **addressed in the URL path** (`/c/{community_id}/…`) — there is no server-held active guild (the `users.active_guild_id` column was removed). `GuildContextDep`/`RLSSessionDep` resolve the guild from the path and re-validate real membership (or a live PAM/break-glass grant) on every request, so a forged or stale path fails closed (403). Cross-guild "my" views are `/api/v1/me/*`. See the tenancy/RLS section for the schema-per-guild + role model.
 - Guild membership has two roles (`admin`, `member`). Guild admins own memberships, invites, initiative/project configuration, and can delete their guild; they cannot delete users from the entire app. Keep server-side checks scoped to guild roles, not legacy global roles. A guild admin sees the whole guild via the `app.guild_admin` RLS leg (and the guild role they `SET ROLE` into), not a bypass.
-- **Platform roles are a 5-rung ladder** (`member` → `support` → `moderator` → `operator` → `owner`) resolved to a capability set in `backend/app/core/capabilities.py`, and each tier is a real `platform_<tier>` Postgres role the public path assumes. Gate platform endpoints on a capability via `require_capability(...)`, not a role name; the frontend reads the backend-computed `UserRead.capabilities` (mirror constants in `frontend/src/lib/permissions.ts`). App-wide configuration (OIDC, SMTP email, branding accents, role labels, platform AI) requires `config.manage` (owner-only) — these routes live under `/settings/platform`. The first/bootstrap user becomes `owner`. Never leave the platform without a `config.manage` holder (see `is_last_capability_holder`).
-- **No standing all-guild bypass.** `data.bypass` (`operator`+`owner`) is **not** an ambient RLS bypass — it is the right to **self-issue a break-glass grant**. Cross-guild access (for any tier) is always a time-bound, per-guild, audited grant in `access_grants` (`/api/v1/access-grants`), routed through the guild's own `guild_<id>_ro`/`guild_<id>` roles — never BYPASSRLS. support/moderator use request → approve/deny → auto-expire (read-only by default, edit-existing only on `read_write`); operator/owner self-approve a break-glass grant (`POST /access-grants/break-glass`) that acts as a full guild admin for its window. See the tenancy/RLS section.
+- **Platform roles are a 5-rung ladder** (`member` → `moderator` → `support` → `operator` → `owner`) resolved to a capability set in `backend/app/core/capabilities.py`, and each tier is a real `platform_<tier>` Postgres role the public path assumes. Gate platform endpoints on a capability via `require_capability(...)`, not a role name; the frontend reads the backend-computed `UserRead.capabilities` (mirror constants in `frontend/src/lib/permissions.ts`). App-wide configuration (OIDC, SMTP email, branding accents, role labels, platform AI) requires `config.manage` (owner-only) — these routes live under `/settings/platform`. The first/bootstrap user becomes `owner`. Never leave the platform without a `config.manage` holder (see `is_last_capability_holder`).
+- **No standing all-guild bypass.** `data.bypass` (`operator`+`owner`) is **not** an ambient RLS bypass — it is the right to **self-issue a break-glass grant**. Cross-guild access (for any tier) is always a time-bound, per-guild, audited grant in `access_grants` (`/api/v1/access-grants`), routed through the guild's own `guild_<id>_ro`/`guild_<id>` roles — never BYPASSRLS. moderator/support use request → approve/deny → auto-expire (read-only by default, edit-existing only on `read_write`); operator/owner self-approve a break-glass grant (`POST /access-grants/break-glass`) that acts as a full guild admin for its window. See the tenancy/RLS section.
 - `.env` supports `DISABLE_GUILD_CREATION`. When set to `true`, POST `/communities/` must return 403 and the frontend should hide “Create guild” affordances, forcing new users to redeem invites issued by guild admins.
 - Every new guild automatically **provisions its `guild_<id>` schema + per-guild roles** (`provision_guild_schema`), seeds its settings row + mandatory plug-ins, and makes the creator a guild admin. It gets **no initiative** — naming the first one is the owner's decision, and the guild home's empty state is where they make it (`scripts/seed_dev_data.py` provisions its own through the same sequence the create endpoint uses). Be mindful when writing migrations or services so this invariant holds — guild deletion must drop the schema + roles (`deprovision_guild`) *and* clean up the shared rows (memberships, invites, OIDC mappings, access grants) that cascade off `public.guilds`.
 

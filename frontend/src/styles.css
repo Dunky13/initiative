@@ -74,6 +74,12 @@
   }
 }
 
+/* A row holding an item's actions: as a child, or inside the wrapper the
+   layout editor puts around each part. */
+@custom-variant item-actions-row (
+  &:has(> [data-item-actions], > [data-layout-node] > [data-item-actions])
+);
+
 /* Tiles, as many columns as fit at the given minimum width (a spacing step:
    grid-cols-fill-60 is 15rem). A tile never overflows a region narrower than
    its minimum. A modifier caps the columns: grid-cols-fill-60/3 fills like

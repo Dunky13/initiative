@@ -27,6 +27,18 @@ _DESCRIPTION = (
 #: and every later one, or the whole series.
 OccurrenceScope = Literal["this", "following", "all"]
 
+
+def validate_task_recurrence(
+    *, rule: str | None, strategy: str, limit: int | None, due: datetime | None
+) -> None:
+    """Validate fields together, also after merging a PATCH with its row."""
+    hourly = rule is not None and recurrence.parse(rule).rule.get("FREQ") == ["HOURLY"]
+    if (hourly and (strategy != "rolling" or due is None)) or (
+        limit is not None and (not hourly or strategy != "rolling")
+    ):
+        raise ValueError("INVALID_RECURRENCE_LIMIT")
+
+
 TaskRule = Annotated[
     str,
     Field(max_length=recurrence.MAX_LENGTH, description=_DESCRIPTION),

@@ -30,7 +30,10 @@ vi.mock("@/hooks/useLegalDocuments", async (importOriginal) => ({
       { slug: "terms", title: "Terms of Service" },
       { slug: "privacy", title: "Privacy Policy" },
     ],
-    required: ["terms", "privacy"],
+    requiredDocuments: [
+      { slug: "terms", title: "Terms of Service" },
+      { slug: "privacy", title: "Privacy Policy" },
+    ],
     isLoading: false,
   }),
 }));

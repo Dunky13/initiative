@@ -1503,6 +1503,7 @@ INITIATIVE_PATHS: dict[str, InitiativePath] = {
     # One hop -> projects
     "tasks": via("projects", "project_id"),
     "task_statuses": via("projects", "project_id"),
+    "task_types": via("projects", "project_id"),
     # One hop -> files
     "file_versions": via("files", "file_id"),
     # One hop -> queues
@@ -1643,6 +1644,10 @@ DAC_WRITE_COMMANDS: dict[str, frozenset[str]] = {
     # the reaction, so it answers at the same level. It shares
     # ``reactions_path``; this is the other half of that sharing.
     "reaction_digest_items": _RESPONDING,
+    # An assignee's queued line about a task is queued by whoever assigned
+    # them, who writes to the project; taking or clearing it is the assignee's
+    # own business, done as them.
+    "task_assignment_digest_items": frozenset({"INSERT"}),
 }
 
 #: The default: a command that writes asks at write level.
@@ -2086,6 +2091,7 @@ EVENT_SOURCES: dict[str, Emit | Silent] = {
     "guild_plugins": Emit(guild_wide=True, resource_type="plugins"),
     # -- Facets of their parent ---------------------------------------------
     "task_statuses": Emit(reports_as=reports_as("projects", "project_id", "statuses")),
+    "task_types": Emit(reports_as=reports_as("projects", "project_id", "types")),
     # A property definition is read in its initiative's list, not at an
     # address of its own, so a change to one reports as that initiative.
     "property_definitions": Emit(

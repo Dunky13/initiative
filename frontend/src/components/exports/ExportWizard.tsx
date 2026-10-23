@@ -68,6 +68,9 @@ export type ExportWizardScope =
 export interface ExportContentSeed {
   tasks: TaskFilterSpec;
   taskSorting: SortField[];
+  /** The layout fields their table of the project shows, which its report
+   *  shows. */
+  taskColumns: string[];
   taskStatuses: TaskStatusRead[];
 }
 
@@ -131,6 +134,8 @@ interface ContentFilters {
   tasks: TaskFilterSpec;
   /** The order a project's tasks are listed in; empty for its own. */
   taskSorting: SortField[];
+  /** The fields its report shows; empty for the shipped ones. */
+  taskColumns: string[];
 }
 
 /** Nothing narrowed. A backup carries every task, archived ones too, and a
@@ -140,6 +145,7 @@ const emptyContent = (backup: boolean): ContentFilters => ({
   events: {},
   tasks: { ...EMPTY_TASK_FILTERS, include_archived: backup },
   taskSorting: [],
+  taskColumns: [],
 });
 
 /** The same filters for another output: the archived switch moves to where
@@ -154,15 +160,22 @@ const forOutput = (content: ContentFilters, backup: boolean): ContentFilters => 
 const taskExportParams = (
   spec: TaskFilterSpec,
   sorting: SortField[],
+  columns: string[],
   backup: boolean
 ): Record<string, unknown> => {
   const conditions = taskSpecConditions(spec);
-  if (conditions.length === 0 && sorting.length === 0 && spec.include_archived === backup) {
+  if (
+    conditions.length === 0 &&
+    sorting.length === 0 &&
+    columns.length === 0 &&
+    spec.include_archived === backup
+  ) {
     return {};
   }
   return {
     ...(conditions.length > 0 ? { conditions: JSON.stringify(conditions) } : {}),
     ...(sorting.length > 0 ? { sorting: JSON.stringify(sorting) } : {}),
+    ...(columns.length > 0 ? { columns } : {}),
     include_archived: spec.include_archived,
   };
 };
@@ -233,8 +246,8 @@ const CONTENT_FILTERS: Partial<Record<Tool, ContentFilter>> = {
     Field: EventDatesField,
   },
   [Tool.project]: {
-    params: ({ tasks, taskSorting }, backup) => ({
-      tasks: taskExportParams(tasks, taskSorting, backup),
+    params: ({ tasks, taskSorting, taskColumns }, backup) => ({
+      tasks: taskExportParams(tasks, taskSorting, taskColumns, backup),
     }),
     prompt: "wizard.content.tasksPrompt",
     note: "wizard.content.allTasksNote",

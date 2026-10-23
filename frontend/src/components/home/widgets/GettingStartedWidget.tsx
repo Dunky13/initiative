@@ -230,12 +230,7 @@ export const GettingStartedWidget = ({ options, onOptionsChange, onRemove }: Hom
               )}
               <div className="min-w-0 flex-1 space-y-2">
                 <div>
-                  <p
-                    className={cn(
-                      "font-medium text-sm",
-                      step.done && "text-muted-foreground line-through"
-                    )}
-                  >
+                  <p className={cn("font-medium text-sm", step.done && "text-muted-foreground")}>
                     {step.title}
                     <span className="sr-only">
                       {step.done ? ` (${t("widgets.gettingStarted.stepDone")})` : ""}

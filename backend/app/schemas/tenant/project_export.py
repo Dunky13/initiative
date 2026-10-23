@@ -11,14 +11,34 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, List, Literal, Optional
 
-from pydantic import AliasChoices, Field
+from pydantic import (
+    AliasChoices,
+    AwareDatetime,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.schemas.base import SanitizedBaseModel
+from app.schemas.recurrence import validate_task_recurrence
 
+from app.core import recurrence
 from app.core.relationships import RelationshipType
+from app.core.tools import (
+    DETAIL_LAYOUTS,
+    LAYOUT_DEFAULT,
+    LIST_LAYOUTS,
+    TYPED_DETAILS,
+    Tool,
+)
 from app.models.tenant.property import PropertyType
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.schemas.tenant.import_envelopes import EnvelopePropertyValue, _EnvelopeBase
+from app.schemas.tenant.tool_layout import (
+    DetailLayoutWrite,
+    ListLayoutWrite,
+    ToolLayoutDefaultWrite,
+)
 
 
 #: Where a row's property values are read from. ``property_values`` is what
@@ -55,6 +75,20 @@ class ProjectExportTaskStatus(SanitizedBaseModel):
     color: Optional[str] = None
     icon: Optional[str] = None
     is_default: bool = False
+
+
+class ProjectExportTaskType(SanitizedBaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    position: int = 0
+    is_default: bool = False
+    # Absent from what another tool's export is mapped into: the importer
+    # then gives the type the plain look.
+    color: Optional[str] = None
+    icon: Optional[str] = None
+    layout_preset: Optional[str] = None
+    #: What a new task of the type starts with
+    #: (``app.schemas.tenant.task_type.TaskTypeStartingValues``).
+    starting_values: Optional[dict[str, Any]] = None
 
 
 class ProjectExportPropertyDefinition(SanitizedBaseModel):
@@ -121,14 +155,18 @@ class ProjectExportTask(SanitizedBaseModel):
     # RRULE lines; an export taken before RRULE carries the older JSON shape.
     recurrence: Optional[str | dict] = None
     recurrence_shift: int = 0
+    recurrence_anchor: Optional[AwareDatetime] = None
+    recurrence_anchor_count: int = Field(default=0, ge=0)
     recurrence_strategy: str = "fixed"
     recurrence_occurrence_count: int = 0
+    recurrence_limit: Optional[int] = Field(default=None, ge=1, le=24, strict=True)
     #: The repeating series the task is in, as a number the tasks of one series
     #: share in this export; the import gives each series a new one.
     series: Optional[int] = None
     #: What an edit of just this task changed from (``Task.recurrence_carry``),
-    #: its tags as ``{"name", "color"}`` under ``tags`` and its assignees under
-    #: ``assignee_handles``, as the rest of the envelope names them.
+    #: its tags as ``{"name", "color"}`` under ``tags``, its assignees under
+    #: ``assignee_handles`` and its type under ``type_name``, as the rest of the
+    #: envelope names them.
     recurrence_carry: Optional[dict[str, Any]] = None
     position: float = 0.0
     archived_at: Optional[datetime] = None
@@ -136,6 +174,9 @@ class ProjectExportTask(SanitizedBaseModel):
     # importer derives it from the restored status in that case.
     completed_at: Optional[datetime] = None
     status_name: str
+    #: Which of the envelope's ``task_types`` the task is, by name; the
+    #: project's default when absent or unknown.
+    type_name: Optional[str] = None
     # When the work was written down, and when it was last touched. Optional
     # because an export taken before these existed carries neither; the
     # importer falls back to the moment of the import, which is the only
@@ -163,9 +204,70 @@ class ProjectExportTask(SanitizedBaseModel):
     # The handles the description mentions, as a comment's are.
     mention_handles: List[str] = []
 
+    @model_validator(mode="after")
+    def _valid_recurrence(self) -> "ProjectExportTask":
+        rule, _ = recurrence.imported(
+            self.recurrence,
+            kind="task",
+            start=self.due_date or self.start_date,
+            tz=None,
+            shift=self.recurrence_shift,
+        )
+        validate_task_recurrence(
+            rule=rule,
+            strategy=self.recurrence_strategy,
+            limit=self.recurrence_limit,
+            due=self.due_date,
+        )
+        return self
+
+
+#: The layouts a project carries: each way it lists its tasks, its task's
+#: page, and the list it opens on.
+_PROJECT_LISTS = LIST_LAYOUTS[Tool.project]
+_PROJECT_LAYOUTS = (*_PROJECT_LISTS, *DETAIL_LAYOUTS[Tool.project], LAYOUT_DEFAULT)
+
+
+class ProjectExportLayout(SanitizedBaseModel):
+    """One of the project's layouts, as it was changed from the shipped one.
+
+    Its rows are named by their place in this envelope, counting from 1: a
+    status id is the status's place in ``task_statuses``, a task type's its
+    place in ``task_types``, and ``property:<n>`` the n-th of
+    ``property_definitions``. People, tags and
+    plug-ins are the community's, so a layout carries none of them; the
+    plug-ins placed where it is imported show on it as they arrive.
+    """
+
+    kind: str
+    #: A task page's type, by its place in ``task_types``; the project's
+    #: default type when absent.
+    task_type: Optional[int] = Field(default=None, ge=1)
+    definition: dict[str, Any]
+
+    @model_validator(mode="after")
+    def _a_layout(self) -> "ProjectExportLayout":
+        if self.kind not in _PROJECT_LAYOUTS:
+            raise ValueError(f"a project's layouts are {', '.join(_PROJECT_LAYOUTS)}")
+        if self.task_type is not None and self.kind != TYPED_DETAILS[Tool.project]:
+            raise ValueError("only a task page has a type")
+        if self.kind == LAYOUT_DEFAULT:
+            read = ToolLayoutDefaultWrite.model_validate(self.definition)
+        else:
+            write = (
+                ListLayoutWrite if self.kind in _PROJECT_LISTS else DetailLayoutWrite
+            )
+            read = write.model_validate(
+                {"kind": self.kind, "definition": self.definition}
+            ).definition
+        # Kept as read, so what is remapped is what was checked.
+        self.definition = read.model_dump(mode="json", exclude_unset=True)
+        return self
+
 
 class ProjectExportEnvelope(_EnvelopeBase):
-    """A project with its statuses, tags, property definitions and tasks.
+    """A project with its statuses, tags, property definitions, tasks and
+    layouts.
 
     The project's own fields sit under ``project`` rather than at the top
     level as other envelopes' do; exported files and published listings
@@ -184,5 +286,21 @@ class ProjectExportEnvelope(_EnvelopeBase):
     # with nothing in it. An empty list is a real "none" and is accepted.
     tags: List[ProjectExportTag]
     task_statuses: List[ProjectExportTaskStatus]
+    #: Absent from an export taken before task types existed, whose project is
+    #: then given the types a new one starts with.
+    task_types: List[ProjectExportTaskType] = Field(default_factory=list)
     property_definitions: List[ProjectExportPropertyDefinition]
     tasks: List[ProjectExportTask]
+    # The layouts it changed from the shipped ones; a project drawn as shipped
+    # has none.
+    layouts: List[ProjectExportLayout]
+
+    @field_validator("layouts")
+    @classmethod
+    def _one_of_each(
+        cls, value: List[ProjectExportLayout]
+    ) -> List[ProjectExportLayout]:
+        kinds = [(layout.kind, layout.task_type) for layout in value]
+        if len(set(kinds)) != len(kinds):
+            raise ValueError("a project has one layout of each kind, and type")
+        return value

@@ -20,6 +20,7 @@ from app.models.platform.guild import CommunityRole
 from app.models.tenant.resource_grant import ResourceAccessLevel
 from app.models.tenant.tool_layout import ToolLayout
 from app.schemas.tenant.tool_layout import MAX_DEPTH, MAX_NODES, MAX_PLUGIN_PARTS
+from app.services.tenant import task_types as task_types_service
 from app.services.tenant import tool_layouts as tool_layouts_service
 from app.testing import (
     create_counter_group,
@@ -90,31 +91,102 @@ _TASK: dict[str, Any] = {
 }
 
 
+def _key(layout: dict[str, Any]) -> str:
+    """A layout's kind, with the type of task a project's task page is for."""
+    typed = layout.get("task_type_id")
+    return f"{layout['kind']}:{typed}" if typed else layout["kind"]
+
+
 def _dates(body: dict[str, Any]) -> dict[str, Any]:
-    return {layout["kind"]: layout["updated_at"] for layout in body["layouts"]}
+    return {_key(layout): layout["updated_at"] for layout in body["layouts"]}
+
+
+async def _types(session: AsyncSession, a: Any) -> list[Any]:
+    await route_session_to_guild(session, a.guild.id)
+    return await task_types_service.list_types(session, a.project.id)
+
+
+def _for(payload: dict[str, Any], task_type: Any) -> dict[str, Any]:
+    """A task page's payload, for one type of task."""
+    return {**payload, "task_type_id": task_type.id}
 
 
 async def test_a_project_draws_its_layouts_as_shipped_until_one_changes(
-    client: AsyncClient, acting_user
+    client: AsyncClient, session: AsyncSession, acting_user
 ):
     a = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
+    types = await _types(session, a)
 
     response = await client.get(a.g("/layouts/"), params=_project(a), headers=a.headers)
 
     assert response.status_code == 200
     body = response.json()
     assert body["can_configure"] is True
+    # Every list shows, and it opens on the first; a task page for each type of
+    # task, in the types' order.
     assert [
-        (layout["kind"], layout.get("is_default"), layout["updated_at"])
+        (
+            layout["kind"],
+            layout.get("is_default"),
+            layout.get("hidden"),
+            layout.get("task_type_id"),
+            layout["updated_at"],
+        )
         for layout in body["layouts"]
     ] == [
-        ("table", True, None),
-        ("board", False, None),
-        ("calendar", False, None),
-        ("task", None, None),
+        ("table", True, False, None, None),
+        ("board", False, False, None, None),
+        ("gantt", False, False, None, None),
+        ("calendar", False, False, None, None),
+        *(("task", None, None, task_type.id, None) for task_type in types),
     ]
+
+
+async def test_a_project_shows_the_lists_it_chooses_and_always_one(
+    client: AsyncClient, acting_user
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    url, params = a.g("/layouts/"), _project(a)
+
+    def shown(body: dict[str, Any]) -> list[tuple[str, bool]]:
+        return [
+            (layout["kind"], layout["is_default"])
+            for layout in body["layouts"]
+            if "is_default" in layout and not layout["hidden"]
+        ]
+
+    async def put(path: str, payload: dict[str, Any]):
+        return await client.put(
+            f"{url}{path}", params=params, json=payload, headers=a.headers
+        )
+
+    # A hidden list is not one to open on, until it is shown again.
+    for kind in ("table", "gantt"):
+        await put("", {"kind": kind, "definition": {"hidden": True}})
+    calendar = await put("", {"kind": "calendar", "definition": {"hidden": True}})
+    assert shown(calendar.json()) == [("board", True)]
+    refused = await put("default", {"kind": "calendar"})
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == "TOOL_LAYOUTS_KIND_NOT_ALLOWED"
+    calendar = await put("", {"kind": "calendar", "definition": {"hidden": False}})
+    assert shown(calendar.json()) == [("board", True), ("calendar", False)]
+    opens = await put("default", {"kind": "calendar"})
+    assert shown(opens.json()) == [("board", False), ("calendar", True)]
+
+    # Hiding the one it opens on opens it on the first still shown; hiding the
+    # last is refused, and putting one back as shipped shows it again, first.
+    hidden = await put("", {"kind": "calendar", "definition": {"hidden": True}})
+    assert shown(hidden.json()) == [("board", True)]
+    last = await put("", {"kind": "board", "definition": {"hidden": True}})
+    assert last.status_code == 400
+    assert last.json()["detail"] == "TOOL_LAYOUTS_ONE_LIST_SHOWN"
+    reset = await client.delete(f"{url}table", params=params, headers=a.headers)
+    assert reset.status_code == 200, reset.text
+    assert shown(reset.json()) == [("table", True), ("board", False)]
 
 
 async def test_a_layout_changes_alone_and_goes_back_to_shipped(
@@ -124,6 +196,8 @@ async def test_a_layout_changes_alone_and_goes_back_to_shipped(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
     url, params = a.g("/layouts/"), _project(a)
+    first, second = (await _types(session, a))[:2]
+    page = f"task:{first.id}"
 
     board = await client.put(url, params=params, json=_BOARD, headers=a.headers)
     assert board.status_code == 200, board.text
@@ -133,10 +207,14 @@ async def test_a_layout_changes_alone_and_goes_back_to_shipped(
     board_at = _dates(board.json())["board"]
     assert {kind for kind, at in _dates(board.json()).items() if at} == {"board"}
 
-    task = (await client.put(url, params=params, json=_TASK, headers=a.headers)).json()
-    # Laying out the task leaves the board's date where it was.
+    task = (
+        await client.put(url, params=params, json=_for(_TASK, first), headers=a.headers)
+    ).json()
+    # Laying out one type's page leaves the board's date where it was, and
+    # every other type's page as shipped.
     assert _dates(task)["board"] == board_at
-    (task_layout,) = [layout for layout in task["layouts"] if layout["kind"] == "task"]
+    assert _dates(task)[f"task:{second.id}"] is None
+    (task_layout,) = [layout for layout in task["layouts"] if _key(layout) == page]
     assert task_layout["definition"] == {
         "header": None,
         "side": None,
@@ -152,19 +230,51 @@ async def test_a_layout_changes_alone_and_goes_back_to_shipped(
     assert _dates(table)["table"] is not None
     await route_session_to_guild(session, a.guild.id)
     stored = {
-        row.kind: row.definition
+        (row.kind, row.task_type_id): row.definition
         for row in (await session.exec(select(ToolLayout))).all()
     }
     assert stored == {
-        "board": _BOARD["definition"],
-        "table": _TABLE["definition"],
-        "task": _TASK["definition"],
+        ("board", None): _BOARD["definition"],
+        ("table", None): _TABLE["definition"],
+        ("task", first.id): _TASK["definition"],
     }
 
     reset = await client.delete(f"{url}board", params=params, headers=a.headers)
     assert reset.status_code == 200, reset.text
     assert _dates(reset.json())["board"] is None
-    assert _dates(reset.json())["task"] == _dates(task)["task"]
+    assert _dates(reset.json())[page] == _dates(task)[page]
+
+    # A task page goes back to shipped for its own type.
+    reset = await client.delete(
+        f"{url}task", params={**params, "task_type_id": first.id}, headers=a.headers
+    )
+    assert reset.status_code == 200, reset.text
+    assert _dates(reset.json())[page] is None
+
+
+async def test_a_task_page_names_one_of_its_projects_types(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    elsewhere = await create_project(session, a.initiative, a.user, name="Elsewhere")
+    await route_session_to_guild(session, a.guild.id)
+    foreign = (await task_types_service.list_types(session, elsewhere.id))[0]
+    url, params = a.g("/layouts/"), _project(a)
+
+    untyped = await client.put(url, params=params, json=_TASK, headers=a.headers)
+    stolen = await client.put(
+        url, params=params, json=_for(_TASK, foreign), headers=a.headers
+    )
+    typed_list = await client.put(
+        url, params=params, json=_for(_BOARD, foreign), headers=a.headers
+    )
+
+    assert untyped.status_code == 400
+    assert stolen.status_code == 404
+    assert stolen.json()["detail"] == "TASK_TYPE_NOT_FOUND"
+    assert typed_list.status_code == 422
 
 
 async def test_the_list_a_project_opens_on_is_its_own_change(
@@ -314,11 +424,12 @@ async def test_an_initiatives_layouts_list_each_project_the_reader_can_open(
     await create_resource_grant(
         session, manager.project, user=member.user, level=ResourceAccessLevel.read
     )
+    default_type = (await _types(session, manager))[0]
     assert (
         await client.put(
             manager.g("/layouts/"),
             params=_project(manager),
-            json=_TASK,
+            json=_for(_TASK, default_type),
             headers=manager.headers,
         )
     ).status_code == 200
@@ -333,7 +444,7 @@ async def test_an_initiatives_layouts_list_each_project_the_reader_can_open(
     assert [
         (each["tool_id"], [kind for kind, at in _dates(each).items() if at])
         for each in seen
-    ] == [(manager.project.id, ["task"]), (closed.id, [])]
+    ] == [(manager.project.id, [f"task:{default_type.id}"]), (closed.id, [])]
     assert all(each["can_configure"] for each in seen)
     # A member reads only what they were let into, and changes none of it.
     assert [(each["tool_id"], each["can_configure"]) for each in read] == [
@@ -478,17 +589,45 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
-        (_table(groupings=[{"field": "title"}]), 422, None),
-        (_table(groupings=[{"field": "plugin:3:ci"}]), 422, None),
-        (_table(groupings=[{"field": "status"}, {"field": "status"}]), 422, None),
-        (_table(groupings=[{"field": "status"}], group_by="tags"), 422, None),
         (
-            {"kind": "calendar", "definition": {"group_by": "status"}},
+            _table(groupings=[{"field": "title"}]),
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
         (
-            {"kind": "board", "definition": {"groupings": [{"field": "status"}]}},
+            _table(groupings=[{"field": "due_date"}]),
+            400,
+            "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
+        ),
+        (
+            _table(groupings=[{"field": "priority", "bucket": "month"}]),
+            400,
+            "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
+        ),
+        (_table(groupings=[{"field": "plugin:3:ci"}]), 422, None),
+        (
+            _table(
+                groupings=[{"field": "task_status_id"}, {"field": "task_status_id"}]
+            ),
+            422,
+            None,
+        ),
+        (
+            _table(groupings=[{"field": "task_status_id"}], group_by="tag_ids"),
+            422,
+            None,
+        ),
+        (_table(group_by="due_date"), 400, "TOOL_LAYOUTS_KIND_NOT_ALLOWED"),
+        (
+            {"kind": "calendar", "definition": {"group_by": "task_status_id"}},
+            400,
+            "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
+        ),
+        (
+            {
+                "kind": "board",
+                "definition": {"groupings": [{"field": "task_status_id"}]},
+            },
             400,
             "TOOL_LAYOUTS_KIND_NOT_ALLOWED",
         ),
@@ -530,9 +669,12 @@ def _task(*side: dict[str, Any]) -> dict[str, Any]:
         "a preset past the limit of property and plug-in filters together",
         "a sort on a board's preset, which a board does not sort by",
         "a grouping by a field whose values do not group",
+        "a date grouped without a bucket",
+        "a bucket on something that is not a date",
         "a grouping by a plug-in field",
         "a grouping offered twice",
         "starting on a grouping the list does not offer",
+        "starting on a date the shipped groupings do not offer",
         "a grouped calendar",
         "a board in bands of the statuses its columns are",
         "a column limit on a table, which has no columns of statuses",
@@ -607,13 +749,17 @@ def test_a_copy_keeps_its_presets_filters_where_they_still_mean_something(
     sprint = {"field": "property:9", "hidden": ["s1"]}
     definition = {
         "presets": [_preset(filters=filters)],
-        "groupings": [{"field": "status", "hidden": ["1", "2"]}, sprint],
+        "groupings": [{"field": "task_status_id", "hidden": ["1", "2"]}, sprint],
         "group_by": "property:9",
         "limits": [{"status_id": 1, "limit": 3}, {"status_id": 2, "limit": 4}],
     }
 
-    copied = tool_layouts_service.copied_definition(
-        definition, {1: 11}, same_initiative=same_initiative
+    copied = tool_layouts_service.remapped_definition(
+        definition,
+        tool_layouts_service.Remap(
+            statuses={1: 11}.get,
+            properties=None if same_initiative else lambda _id: None,
+        ),
     )
 
     # Statuses are the copy's own, and one it lacks is dropped; properties
@@ -626,7 +772,7 @@ def test_a_copy_keeps_its_presets_filters_where_they_still_mean_something(
     # So with groupings: a status grouping leaves out the copy's statuses, and
     # a property's goes, with starting on it, where the property is not there.
     assert copied["groupings"] == [
-        {"field": "status", "hidden": ["11"]},
+        {"field": "task_status_id", "hidden": ["11"]},
         *([sprint] if same_initiative else []),
     ]
     assert copied.get("group_by") == ("property:9" if same_initiative else None)
@@ -651,6 +797,20 @@ async def test_a_layout_at_the_limits_is_kept(client: AsyncClient, acting_user):
         a.g("/layouts/"), params=_project(a), json=card, headers=a.headers
     )
 
+    assert response.status_code == 200, response.text
+
+    # A table grouped by any field that groups, a date by its bucket.
+    grouped = _table(
+        groupings=[
+            {"field": "due_date", "bucket": "week"},
+            {"field": "project_id"},
+            {"field": "property:9"},
+        ],
+        group_by="due_date",
+    )
+    response = await client.put(
+        a.g("/layouts/"), params=_project(a), json=grouped, headers=a.headers
+    )
     assert response.status_code == 200, response.text
 
 

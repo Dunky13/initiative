@@ -64,7 +64,9 @@ async def desk(session: AsyncSession, acting_user):
     await session.commit()
 
     await set_rls_context(session, SystemGuild(guild_id))
-    await task_statuses_service.ensure_default_statuses(session, staff.project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, staff.project.id, locale="en"
+    )
     statuses = await _statuses(session, staff.project.id)
     for stream in (IntakeStream.support, IntakeStream.feedback):
         session.add(
@@ -561,12 +563,12 @@ async def test_an_account_act_without_a_case_tells_nothing(
 ):
     from app.models.platform.user import UserRole
 
-    moderator = await create_user(session, role=UserRole.moderator)
+    support = await create_user(session, role=UserRole.support)
     member = await create_user(session)
     task_id = await _case()
     response = await client.delete(
         f"/api/v1/operator/users/{member.id}/sessions",
-        headers=get_auth_headers(moderator),
+        headers=get_auth_headers(support),
     )
     assert response.status_code == 200, response.text
     assert await _notes(session, desk, task_id) == []

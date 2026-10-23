@@ -20,10 +20,12 @@ import type {
   TaskListRead,
   TaskStatusRead,
 } from "@/api/generated/initiativeAPI.schemas";
+import { ProjectTasksGanttView } from "@/components/projects/ProjectTasksGanttView";
 import { ProjectTasksKanbanView } from "@/components/projects/ProjectTasksKanbanView";
 import { ProjectTasksTableView } from "@/components/projects/ProjectTasksTableView";
 import { columnLimitsOf } from "@/hooks/useColumnLimits";
 import type { ProjectTaskTableState } from "@/hooks/useProjectTaskView";
+import { useGroupables, useTaskGroupings } from "@/hooks/useTaskGroupings";
 import { useTasks } from "@/hooks/useTasks";
 import { buildTaskListParams, EMPTY_TASK_FILTERS } from "@/lib/filters/taskFilters";
 import {
@@ -38,12 +40,7 @@ import {
   sameSelection,
 } from "@/lib/layouts/draft";
 import { type FieldDef, LAYOUT_NAMESPACES } from "@/lib/layouts/fields";
-import {
-  offeredGroupings,
-  taskGroupings,
-  viewGrouping,
-  withGroupShown,
-} from "@/lib/layouts/grouping";
+import { viewGrouping, withGroupShown } from "@/lib/layouts/grouping";
 import { cn } from "@/lib/utils";
 import type { TranslateFn } from "@/types/i18n";
 
@@ -561,25 +558,27 @@ export const LayoutCanvas = ({
     (next: GroupingState) => setPicks((all) => ({ ...all, [layout]: next })),
     [layout]
   );
+  const all = useGroupables(fields, t as TranslateFn);
   const grouping = useMemo(
-    () => viewGrouping(definition, layout, picked),
-    [definition, layout, picked]
+    () => viewGrouping(definition, layout, picked, all),
+    [definition, layout, picked, all]
   );
+  const { offered, active } = useTaskGroupings({
+    fields,
+    statuses,
+    tasks,
+    groupings: definition.groupings,
+    kind: layout,
+    grouping,
+    params,
+    t: t as TranslateFn,
+  });
   const tableState = useMemo<ProjectTaskTableState>(
     () => [
       { grouping, sorting: [] },
       { setGrouping, setSorting: noop },
     ],
     [grouping, setGrouping]
-  );
-  const offered = useMemo(
-    () =>
-      offeredGroupings(
-        taskGroupings({ fields, statuses, tasks, t: t as TranslateFn }),
-        definition.groupings,
-        layout
-      ),
-    [fields, statuses, tasks, t, definition.groupings, layout]
   );
 
   return (
@@ -592,12 +591,12 @@ export const LayoutCanvas = ({
         layout !== "calendar" && offered.length > 0 ? (
           <CanvasGrouping
             offered={offered}
+            active={active}
             grouping={grouping}
             onGroupingChange={setGrouping}
-            tasks={tasks}
             disabled={tools.locked}
             onToggle={(id, key, shown) =>
-              onGroupingsChange(withGroupShown(definition.groupings, layout, id, key, shown))
+              onGroupingsChange(withGroupShown(definition.groupings, layout, all, id, key, shown))
             }
           />
         ) : undefined
@@ -609,6 +608,7 @@ export const LayoutCanvas = ({
           initiativeId={initiativeId}
           taskStatuses={statuses}
           groupedTasks={groupedTasks}
+          listParams={params}
           collapsedStatusIds={NO_COLLAPSED}
           canReorderTasks={false}
           taskHref={taskHref}
@@ -631,6 +631,7 @@ export const LayoutCanvas = ({
           projectId={projectId}
           initiativeId={initiativeId}
           tasks={tasks}
+          listParams={params}
           taskStatuses={statuses}
           sensors={undefined}
           canReorderTasks={false}
@@ -649,6 +650,20 @@ export const LayoutCanvas = ({
       ) : null}
       {layout === "calendar" ? (
         <p className="text-muted-foreground text-sm">{t("layouts:calendarNote")}</p>
+      ) : null}
+      {layout === "gantt" ? (
+        <ProjectTasksGanttView
+          initiativeId={initiativeId}
+          projectId={projectId}
+          tasks={tasks}
+          taskStatuses={statuses}
+          listParams={params}
+          scale="week"
+          grouping={grouping}
+          viewGroupings={definition.groupings}
+          taskHref={taskHref}
+          editing
+        />
       ) : null}
     </CanvasFrame>
   );

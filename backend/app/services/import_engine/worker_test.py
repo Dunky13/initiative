@@ -94,13 +94,13 @@ async def test_gc_clears_a_secret_only_from_a_job_that_is_over(
 
 
 async def test_the_apply_session_comes_from_the_communitys_cohort(session):
-    """Each community's apply runs on a session from its own cohort's pool,
-    which routes into it."""
+    """Each community's apply runs on a session from its own cohort's system
+    pool, which routes into it."""
     guilds = [await create_guild(session) for _ in range(3)]
     assert len({cohorts.cohort_of(g.id) for g in guilds}) > 1
 
     for guild in guilds:
-        maker = cohorts.request_sessionmaker(guild.id)
+        maker = cohorts.system_sessionmaker(guild.id)
         async with import_worker._open_user_session(guild.id) as user_session:
             assert user_session.bind is maker.kw["bind"]
             await set_rls_context(user_session, SystemGuild(guild.id))

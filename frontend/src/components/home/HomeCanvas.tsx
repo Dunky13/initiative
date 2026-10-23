@@ -210,16 +210,57 @@ function HomeTile({
   const { Component: Widget } = definition;
   const title = t(`widgets.${widget.type}.title`);
 
+  const actions = (
+    <>
+      {stacked ? (
+        <>
+          <TileButton
+            label={t("tile.moveUp", { title })}
+            onClick={onMoveUp}
+            icon={<ArrowUp className="size-4" />}
+          />
+          <TileButton
+            label={t("tile.moveDown", { title })}
+            onClick={onMoveDown}
+            icon={<ArrowDown className="size-4" />}
+          />
+        </>
+      ) : null}
+      {definition.Settings ? (
+        <TileButton
+          label={t("tile.settings", { title })}
+          onClick={onConfigure}
+          icon={<Settings2 className="size-4" />}
+        />
+      ) : null}
+      <TileButton
+        label={t("tile.remove", { title })}
+        onClick={onRemove}
+        icon={<X className="size-4" />}
+      />
+    </>
+  );
+
+  // The widget sits in the same place in the tree whether or not the page is
+  // being customized, so toggling never remounts it (or refetches it).
   return (
     <div
       className={cn(
         "relative",
         !stacked && "h-full",
-        // A tile in the stack needs a floor while customizing, or a greeting
-        // would be too short to hold its own controls.
-        stacked && editing && "min-h-28"
+        stacked && editing && "space-y-2 rounded-xl border-2 border-primary/50 border-dashed p-2"
       )}
     >
+      {/* Stacked, the controls get a row of their own above the widget: a
+          narrow tile has no spare corner to float them in without covering
+          the widget's own title and controls. */}
+      {stacked && editing ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate px-1 font-medium text-sm">{title}</span>
+          <div className="flex shrink-0 items-center gap-1">{actions}</div>
+        </div>
+      ) : null}
+
       <div
         inert={editing}
         className={cn(
@@ -239,18 +280,13 @@ function HomeTile({
         </WidgetBoundary>
       </div>
 
-      {editing ? (
+      {!stacked && editing ? (
         <div
-          data-home-tile-handle={stacked ? undefined : ""}
-          className={cn(
-            "absolute inset-0 flex items-start justify-between gap-2 rounded-xl border-2 border-primary/50 border-dashed p-2",
-            !stacked && "cursor-move"
-          )}
+          data-home-tile-handle=""
+          className="absolute inset-0 flex cursor-move items-start justify-between gap-2 rounded-xl border-2 border-primary/50 border-dashed p-2"
         >
           <span className="flex min-w-0 items-center gap-1.5 rounded-md bg-background/90 px-2 py-1 font-medium text-sm shadow-sm">
-            {stacked ? null : (
-              <GripVertical className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            )}
+            <GripVertical className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="truncate">{title}</span>
           </span>
           {/* Buttons are not drag handles: a press on one is a click. */}
@@ -258,32 +294,7 @@ function HomeTile({
             data-home-tile-actions=""
             className="flex shrink-0 items-center gap-1 rounded-md bg-background/90 p-0.5 shadow-sm"
           >
-            {stacked ? (
-              <>
-                <TileButton
-                  label={t("tile.moveUp", { title })}
-                  onClick={onMoveUp}
-                  icon={<ArrowUp className="size-4" />}
-                />
-                <TileButton
-                  label={t("tile.moveDown", { title })}
-                  onClick={onMoveDown}
-                  icon={<ArrowDown className="size-4" />}
-                />
-              </>
-            ) : null}
-            {definition.Settings ? (
-              <TileButton
-                label={t("tile.settings", { title })}
-                onClick={onConfigure}
-                icon={<Settings2 className="size-4" />}
-              />
-            ) : null}
-            <TileButton
-              label={t("tile.remove", { title })}
-              onClick={onRemove}
-              icon={<X className="size-4" />}
-            />
+            {actions}
           </div>
         </div>
       ) : null}

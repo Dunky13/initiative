@@ -14,7 +14,7 @@ You can ignore this page entirely. Every layout ships ready to use, and plenty o
 
 | Tool | Its layouts |
 |---|---|
-| [Projects](projects-and-tasks.md#layouts) | **Table**, **Board**, **Calendar** and **Task detail**, per project. |
+| [Projects](projects-and-tasks.md#layouts) | **Table**, **Board**, **Gantt**, **Calendar** (each shown or hidden; all four to start with), and a page for each [task type](projects-and-tasks.md#task-types), per project. |
 | [Queues](queues.md) | **Queue item detail**, per queue. |
 | [Counters](counters.md) | **Counter detail**, per counter group. |
 | [Galleries](galleries.md) | **Picture detail**, per gallery. |
@@ -22,6 +22,8 @@ You can ignore this page entirely. Every layout ships ready to use, and plenty o
 | [Posts](posts.md) | **Notice detail**, once for the whole initiative. |
 
 A detail layout is also how the add dialog is laid out, for tasks, events, queue items and counters. The form you fill in looks like the thing you get.
+
+A project's layouts go wherever the project goes: into a [duplicate](tools.md#duplicating), into an [export](projects-and-tasks.md#exporting-a-project), and out of the marketplace, where a ready-made project arrives laid out the way whoever made it set it up.
 
 ## Who can change them
 
@@ -49,7 +51,7 @@ Nothing changes for anyone until you save, and leaving with unsaved changes asks
 
 A table takes fields and nothing else, since a column is a column.
 
-A table or board layout also says what people may **group by**, what it **starts grouped by**, and which groups to leave out, such as finished sprints. A board's **Column limits** cap how many open tasks a status column holds; once one is full, nobody adds or moves a task into it until one leaves.
+A table or board layout also says what people may **group by**, what it **starts grouped by**, and which groups to leave out, such as finished sprints. A date groups by day, week, month, quarter or year; pick which beside it. A board's **Column limits** cap how many open tasks a status column holds; once one is full, nobody adds or moves a task into it until one leaves.
 
 A detail layout has three regions: **Header** across the top, **Main** the wide column, **Side** the narrow one beside it. On a phone the regions stack into one column, and the **Phone** preview shows in what order.
 

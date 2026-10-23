@@ -180,7 +180,8 @@ async def create_access_request(
     session: SystemSessionDep,
     current_user: AccessRequestDep,
 ) -> AccessGrantRead:
-    """Request time-bound access to a guild (requires ``access.request``).
+    """Request time-bound access to a guild (requires ``access.request``;
+    anything but a ``moderate`` grant also takes ``access.request_any``).
 
     A body may ask for content, settings, or both; each becomes its own pending
     grant so an approver decides about them separately and the log keeps them

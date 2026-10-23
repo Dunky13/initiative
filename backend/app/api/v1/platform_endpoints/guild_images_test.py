@@ -533,7 +533,9 @@ async def test_a_pam_grantee_reads_the_full_banner(
 
     a = await acting_user(guild_role=CommunityRole.admin)
     payload = await _set_banner(client, a.guild.id, a.headers)
-    operator = await create_user(session, email="operator@example.com")
+    operator = await create_user(
+        session, email="operator@example.com", role=UserRole.operator
+    )
     now = datetime.now(timezone.utc)
     session.add(
         AccessGrant(

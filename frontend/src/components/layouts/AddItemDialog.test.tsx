@@ -4,11 +4,23 @@ import { HttpResponse } from "msw";
 import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  buildProjectTaskStatus,
+  buildTaskType,
+  buildUser,
+  buildUserSummary,
+} from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderPage } from "@/__tests__/helpers/render";
-import type { QueueItemRead } from "@/api/generated/initiativeAPI.schemas";
+import type {
+  QueueItemRead,
+  TaskRead,
+  TaskTypeRead,
+  TaskUpdate,
+} from "@/api/generated/initiativeAPI.schemas";
 import { blankQueueItem, QUEUE_ITEM_DETAIL } from "@/lib/layouts/queueItemLayout";
+import { blankTask, TASK_DETAIL } from "@/lib/layouts/taskLayout";
 
 import { AddItemDialog, type Written } from "./AddItemDialog";
 
@@ -111,5 +123,310 @@ describe("adding an item", () => {
 
     await user.type(position, "7");
     expect(add).toBeEnabled();
+  });
+});
+
+/** A project's Create Task, where the task starts as Bug. */
+const AddingTask = ({
+  types,
+  create,
+  onOpenChange = () => {},
+}: {
+  types: TaskTypeRead[];
+  create: (written: Written<TaskRead, TaskUpdate>) => Promise<{ id: number }>;
+  onOpenChange?: (open: boolean) => void;
+}) => {
+  const leaving = useRef(false);
+  const status = buildProjectTaskStatus();
+  return (
+    <AddItemDialog
+      open
+      onOpenChange={onOpenChange}
+      detail={TASK_DETAIL}
+      blank={blankTask(1, status, types[0])}
+      context={{
+        readOnly: false,
+        readOnlyMessage: null,
+        statuses: [status],
+        types,
+        initiativeId: 1,
+        askScope: async () => null,
+        actions: null,
+        leaving,
+      }}
+      layouts={() => null}
+      title="Create task"
+      ready={() => true}
+      create={create}
+      onAdded={() => {}}
+    />
+  );
+};
+
+describe("adding a task", () => {
+  const bug = () =>
+    buildTaskType({
+      name: "Bug",
+      starting_values: {
+        description: "What happened?",
+        checklist: [],
+        priority: "high",
+        recurrence: null,
+        recurrence_strategy: null,
+      },
+    });
+
+  const pickType = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+    await user.click(screen.getByRole("combobox", { name: "Type" }));
+    await user.click(await screen.findByRole("option", { name }));
+  };
+
+  it("starts with what its type starts with, and follows the type until it is changed", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => (
+      <AddingTask types={[bug(), buildTaskType({ name: "Feature" })]} create={create} />
+    ));
+    const user = userEvent.setup();
+
+    // Written, it opens on its preview; the box behind it holds the text.
+    await screen.findByRole("combobox", { name: "Type" });
+    const description = document.getElementById("task-description");
+    expect(description).toHaveValue("What happened?");
+    await pickType(user, "Feature");
+    expect(description).toHaveValue("");
+    await pickType(user, "Bug");
+    expect(description).toHaveValue("What happened?");
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          item: expect.objectContaining({ description: "What happened?", priority: "high" }),
+        })
+      )
+    );
+  });
+
+  it("keeps a description the person wrote when the type changes", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => (
+      <AddingTask types={[buildTaskType({ name: "Feature" }), bug()]} create={create} />
+    ));
+    const user = userEvent.setup();
+
+    const description = await screen.findByRole("textbox", { name: "Description" });
+    await user.type(description, "Mine");
+    await pickType(user, "Bug");
+
+    expect(description).toHaveValue("Mine");
+  });
+
+  it("keeps a priority the person picked when the type changes", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    const [feature, chore] = [
+      buildTaskType({ name: "Feature" }),
+      buildTaskType({
+        name: "Chore",
+        starting_values: {
+          description: null,
+          checklist: [],
+          priority: "low",
+          recurrence: null,
+          recurrence_strategy: null,
+        },
+      }),
+    ];
+    renderPage(() => <AddingTask types={[feature, chore]} create={create} />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("combobox", { name: "Priority" }));
+    await user.click(await screen.findByRole("option", { name: /Urgent/ }));
+    await pickType(user, "Chore");
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          item: expect.objectContaining({ task_type_id: chore.id, priority: "urgent" }),
+        })
+      )
+    );
+  });
+});
+
+/** A reader who keeps their titles as typed. */
+const asTyped = { auth: { user: buildUser({ smart_task_titles: false }) } };
+
+/** What the last Create task was given. */
+const sent = (create: ReturnType<typeof vi.fn>) =>
+  (create.mock.calls.at(-1)?.[0] as Written<TaskRead, TaskUpdate>) ?? null;
+
+describe("adding a task with its title read", () => {
+  const reader = { auth: { user: buildUser({ smart_task_titles: true }) } };
+
+  it("sets what the title says on the task, and adds it without those words", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => <AddingTask types={[buildTaskType()]} create={create} />, reader);
+    const user = userEvent.setup();
+
+    const title = await screen.findByPlaceholderText(/task title/i);
+    await user.type(title, "Fix the login tomorrow at 9am !urgent");
+    expect(title).toHaveValue("Fix the login tomorrow at 9am !urgent");
+    const read = screen.getByRole("list", { name: "Read from the title" });
+    expect(read).toHaveTextContent(/urgent priority/i);
+    expect(read).toHaveTextContent(/due/i);
+    // Enter adds it straight from the title.
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    const { item, fields } = sent(create);
+    expect(fields).toMatchObject({ title: "Fix the login", priority: "urgent" });
+    expect(item.priority).toBe("urgent");
+    const due = new Date(fields.due_date as string);
+    expect(due.getHours()).toBe(9);
+  });
+
+  it("puts a field back once its words are gone", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => <AddingTask types={[buildTaskType()]} create={create} />, reader);
+    const user = userEvent.setup();
+
+    const title = await screen.findByPlaceholderText(/task title/i);
+    await user.type(title, "Fix the login !urgent");
+    await user.type(title, "{Backspace}".repeat(" !urgent".length));
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    const { item, fields } = sent(create);
+    expect(fields.title).toBe("Fix the login");
+    expect(item.priority).toBe("medium");
+  });
+
+  it("keeps words in the title once they are taken off the list", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => <AddingTask types={[buildTaskType()]} create={create} />, reader);
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByPlaceholderText(/task title/i), "Fix the login !urgent");
+    await user.click(screen.getByRole("button", { name: "Keep “!urgent” in the title" }));
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    const { item, fields } = sent(create);
+    expect(fields.title).toBe("Fix the login !urgent");
+    expect(item.priority).toBe("medium");
+  });
+
+  it("adds the title as typed where the reader has it off", async () => {
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => <AddingTask types={[buildTaskType()]} create={create} />, asTyped);
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByPlaceholderText(/task title/i), "Fix the login !urgent");
+    expect(screen.queryByRole("list", { name: "Read from the title" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(sent(create).fields.title).toBe("Fix the login !urgent");
+  });
+});
+
+describe("naming somebody in a task's title", () => {
+  const reader = { auth: { user: buildUser({ smart_task_titles: true }) } };
+  const sam = buildUserSummary({ id: 42, username: "sam", display_name: "Sam Vimes" });
+  const stubPeople = () => {
+    const asked: URLSearchParams[] = [];
+    server.use(
+      communityHttp.get("/users/search", ({ request }) => {
+        asked.push(new URL(request.url).searchParams);
+        return HttpResponse.json({
+          items: [sam],
+          total_count: 1,
+          page: 1,
+          page_size: 8,
+          has_next: false,
+          has_prev: false,
+        });
+      })
+    );
+    return asked;
+  };
+
+  it("offers the people who can open the project, and assigns the one picked", async () => {
+    const asked = stubPeople();
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => <AddingTask types={[buildTaskType()]} create={create} />, reader);
+    const user = userEvent.setup();
+
+    const title = await screen.findByPlaceholderText(/task title/i);
+    await user.type(title, "Review the draft @sa");
+    await user.click(await screen.findByRole("button", { name: /Sam Vimes/ }));
+
+    expect(title).toHaveValue("Review the draft @sam ");
+    expect(asked.some((params) => params.get("tool") === "project")).toBe(true);
+    const read = screen.getByRole("list", { name: "Read from the title" });
+    expect(read).toHaveTextContent("Sam Vimes");
+    // The task's own Assignees field shows them too.
+    expect(await screen.findByRole("button", { name: /remove sam vimes/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(sent(create).fields).toMatchObject({
+      title: "Review the draft",
+      assignee_ids: [42],
+    });
+  });
+
+  it("picks with Enter rather than adding the task", async () => {
+    stubPeople();
+    const create = vi.fn(async () => ({ id: 5 }));
+    renderPage(() => <AddingTask types={[buildTaskType()]} create={create} />, reader);
+    const user = userEvent.setup();
+
+    const title = await screen.findByPlaceholderText(/task title/i);
+    await user.type(title, "Review @sa");
+    await screen.findByRole("button", { name: /Sam Vimes/ });
+    await user.keyboard("{Enter}");
+
+    expect(title).toHaveValue("Review @sam ");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("closes the list on Escape and leaves the dialog open", async () => {
+    stubPeople();
+    const onOpenChange = vi.fn();
+    renderPage(
+      () => (
+        <AddingTask
+          types={[buildTaskType()]}
+          create={vi.fn(async () => ({ id: 5 }))}
+          onOpenChange={onOpenChange}
+        />
+      ),
+      reader
+    );
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByPlaceholderText(/task title/i), "Review @sa");
+    await screen.findByRole("button", { name: /Sam Vimes/ });
+    await user.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Sam Vimes/ })).not.toBeInTheDocument()
+    );
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("offers nobody where the reader has titles read as typed", async () => {
+    const asked = stubPeople();
+    renderPage(
+      () => <AddingTask types={[buildTaskType()]} create={vi.fn(async () => ({ id: 5 }))} />,
+      asTyped
+    );
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByPlaceholderText(/task title/i), "Review @sa");
+    expect(screen.queryByRole("button", { name: /Sam Vimes/ })).not.toBeInTheDocument();
+    expect(asked).toHaveLength(0);
   });
 });

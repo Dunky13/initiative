@@ -13,6 +13,7 @@ import {
   buildTask,
   buildTaskAssignee,
   buildTaskListResponse,
+  buildToolLayoutSet,
   buildUser,
 } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
@@ -47,8 +48,9 @@ const seed = (task: Partial<TaskListRead>) => {
   );
 };
 
-const project = ({ layout, canEdit = true }: { layout: "table" | "board"; canEdit?: boolean }) =>
-  renderPage(
+const project = ({ layout, canEdit = true }: { layout: "table" | "board"; canEdit?: boolean }) => {
+  server.use(communityHttp.get("/layouts/", () => HttpResponse.json(buildToolLayoutSet())));
+  return renderPage(
     () => (
       <ProjectTasksSection
         projectId={1}
@@ -59,8 +61,9 @@ const project = ({ layout, canEdit = true }: { layout: "table" | "board"; canEdi
         taskHref={(taskId) => `/tasks/${taskId}`}
       />
     ),
-    { routerSearch: layout === "board" ? { layout: "board" } : {}, auth: { user: ME } }
+    { routerSearch: { layout }, auth: { user: ME } }
   );
+};
 
 const row = async (title: string) => {
   const cell = (await screen.findByText(title)).closest("tr");
@@ -72,9 +75,12 @@ beforeEach(() => {
   patches = [];
   localStorage.clear();
   // The table is virtualized, and jsdom gives every element a zero height,
-  // which windows it down to no rows at all.
+  // which windows it down to no rows at all. The virtualizer sizes its
+  // scroll element by its client box and each row by its offset box.
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1200);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
 });
 
 describe("a table's assignees", () => {

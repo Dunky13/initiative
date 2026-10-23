@@ -75,7 +75,9 @@ export function formatValue(
       return formatDuration(value);
 
     case "date":
+    case "date-only":
       return dateTimeFormat(locale, {
+        ...(format === "date-only" ? { timeZone: "UTC" } : {}),
         month: "short",
         day: "numeric",
         year: "numeric",
@@ -95,8 +97,9 @@ export const formatAxisValue = (
   options: FormatOptions = {}
 ): string => {
   if (typeof value === "string") return value;
-  if (format === "date") {
+  if (format === "date" || format === "date-only") {
     return dateTimeFormat(options.locale, {
+      ...(format === "date-only" ? { timeZone: "UTC" } : {}),
       month: "short",
       day: "numeric",
     }).format(new Date(value));

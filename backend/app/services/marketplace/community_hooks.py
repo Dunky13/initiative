@@ -505,24 +505,6 @@ def _backoff(attempts: int) -> timedelta:
     return timedelta(seconds=BACKOFF_SECONDS[min(attempts, len(BACKOFF_SECONDS)) - 1])
 
 
-async def _report_erased(guild_id: int, public_id: str) -> None:
-    """Tell the entitlement issuer the plug-in's data is erased, for a listing
-    it has terms for."""
-    from app.services.marketplace import plugin_entitlements
-
-    registration = (await registration_lookup.load_registrations()).get(public_id)
-    if registration is None or not registration.listing_uid:
-        return
-    try:
-        await plugin_entitlements.erased(guild_id, registration.listing_uid)
-    except Exception:
-        logger.exception(
-            "community hooks: the erase of %s in guild %s was not reported",
-            public_id,
-            guild_id,
-        )
-
-
 async def _record_abandoned_erase(row: PluginCommunityHook, attempts: int) -> None:
     """Put an ``erase`` the plug-in never answered on the audit stream."""
     from app.core.audit_events import AuditEventType
@@ -656,8 +638,6 @@ async def _settle(
         )
         if values["outcome"] == "gave_up":
             await _record_abandoned_erase(row, attempts)
-        else:
-            await _report_erased(row.guild_id, row.public_id)
     return "done_at" in values
 
 

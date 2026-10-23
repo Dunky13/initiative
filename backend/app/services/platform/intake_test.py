@@ -23,6 +23,7 @@ from app.testing import (
     create_guild,
     create_initiative,
     create_project,
+    create_task,
     create_user,
 )
 from app.db.request_context import SystemGuild, Unattributed
@@ -103,6 +104,91 @@ async def test_a_bound_stream_lands_a_task_in_its_project(session, bound):
     assert task.project_id == bound["project"].id
     assert task.title == "Cannot sign in"
     assert task.description == "It says my code expired."
+
+
+async def test_a_case_is_the_type_its_binding_names(session, bound):
+    """A binding naming one of the project's types files cases as it; one
+    naming a type since deleted files them as the project's default."""
+    from app.models.tenant.task import TaskType
+    from app.services.tenant import task_types as task_types_service
+
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    task_type, bug = (
+        await task_types_service.ensure_default_types(
+            session, bound["project"].id, locale="en"
+        )
+    )[:2]
+    binding = (
+        await session.exec(
+            select(IntakeBinding).where(IntakeBinding.id == bound["binding"].id)
+        )
+    ).one()
+    binding.task_type_id = bug.id
+    session.add(binding)
+    bug.starting_values = {"description": "What happened?", "priority": "high"}
+    bug.starting_values["checklist"] = ["Reproduce"]
+    session.add(bug)
+    await session.commit()
+
+    # It starts as a Bug starts a task, under the body it came with.
+    outcome = await intake_service.open_case(IntakeStream.support, title="Broken")
+    assert outcome is not None
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    filed = (await session.exec(select(Task).where(Task.id == outcome.task_id))).one()
+    assert filed.task_type_id == bug.id
+    assert (filed.description, filed.priority) == ("What happened?", "high")
+    assert [item["text"] for item in filed.checklist] == ["Reproduce"]
+    outcome = await intake_service.open_case(
+        IntakeStream.support, title="Crash", body="It crashed on save."
+    )
+    assert outcome is not None
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    told = (await session.exec(select(Task).where(Task.id == outcome.task_id))).one()
+    assert told.description == "It crashed on save."
+    filed = (await session.exec(select(Task).where(Task.id == filed.id))).one()
+
+    # Its type goes, its tasks moved off it first; the binding lets go of it.
+    for each in (filed, told):
+        each.task_type_id = task_type.id
+        session.add(each)
+    await session.flush()
+    await session.delete(
+        (await session.exec(select(TaskType).where(TaskType.id == bug.id))).one()
+    )
+    await session.commit()
+    outcome = await intake_service.open_case(IntakeStream.support, title="Again")
+    assert outcome is not None
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    again = (await session.exec(select(Task).where(Task.id == outcome.task_id))).one()
+    assert again.task_type_id == task_type.id
+
+
+async def test_a_cases_starting_outline_records_what_it_points_at(session, bound):
+    """An outline naming a task lists the case among that task's references."""
+    from app.core.relationships import RelationshipType
+    from app.models.tenant.relationship import EntityRelationship
+    from app.services.tenant import task_types as task_types_service
+
+    guide = await create_task(session, bound["project"], title="Triage guide")
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    default = await task_types_service.get_default_type(session, bound["project"].id)
+    default.starting_values = {"description": f"Read #task[Guide]({guide.id})"}
+    session.add(default)
+    await session.commit()
+
+    outcome = await intake_service.open_case(IntakeStream.support, title="Help")
+    assert outcome is not None
+
+    await set_rls_context(session, SystemGuild(bound["guild"].id))
+    edges = await session.exec(
+        select(EntityRelationship.target_type, EntityRelationship.target_id).where(
+            EntityRelationship.source_type == "task",
+            EntityRelationship.source_id == outcome.task_id,
+            EntityRelationship.relationship_type == RelationshipType.references.value,
+            EntityRelationship.removed_at.is_(None),
+        )
+    )
+    assert set(edges.all()) == {("task", guide.id)}
 
 
 async def test_a_system_opened_case_names_no_author(session, bound):
@@ -407,7 +493,9 @@ async def test_a_case_whose_task_was_moved_away_is_not_this_projects_case(
 
     await set_rls_context(session, SystemGuild(bound["guild"].id))
     elsewhere = await create_project(session, bound["initiative"], bound["user"])
-    await task_statuses_service.ensure_default_statuses(session, elsewhere.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, elsewhere.id, locale="en"
+    )
     task = (await session.exec(select(Task).where(Task.id == first.task_id))).one()
     task.project_id = elsewhere.id
     task.task_status_id = (

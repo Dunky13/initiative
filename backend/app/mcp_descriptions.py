@@ -114,6 +114,16 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "(backlog, todo, in_progress, done). Their ids are what `create_task` "
         "and `update_task` take as `task_status_id`."
     ),
+    "list_task_type_gallery": (
+        "Ready-made task types a project can add (Event, Chore, Bill, …), "
+        "grouped by what they are for, in the caller's language, with the "
+        "fields and starting values each brings."
+    ),
+    "list_task_types": (
+        "A project's task types (Task, Bug, Idea, Milestone, or the project's "
+        "own), in order, with which is the default. Their ids are what "
+        "`create_task` and `update_task` take as `task_type_id`."
+    ),
     "list_initiative_task_statuses": (
         "The status columns used across an initiative's projects, one per name "
         "and category, with how many projects use each."
@@ -129,6 +139,12 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "`sorting`; follow `has_next` for more pages. Archived tasks are left "
         "out unless `include_archived`."
     ),
+    "list_task_groups": (
+        "The groups the tasks `conditions` match fall into, grouped by one "
+        "field (`group_by`, or `property:<id>` for a custom property), in the "
+        "order a grouped list shows them, and the groups each task id is in. "
+        "A date groups by `bucket`."
+    ),
     "list_my_tasks": (
         "Tasks assigned to the caller across every community they belong to, or "
         "with `created` the ones they created. Left without `conditions`, only "
@@ -141,7 +157,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "create_task": (
         "Create a task in a project (`project_id`). Left without "
-        "`task_status_id`, it goes in the project's default column. "
+        "`task_status_id`, it goes in the project's default column, and "
+        "without `task_type_id` it is the project's default type. "
         "`description` is markdown; `checklist` takes lines of text."
     ),
     "update_task": (
@@ -150,11 +167,14 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "id. `add_assignee_ids`/`remove_assignee_ids` change people without "
         "replacing the list; `assignee_ids` and `tag_ids` replace it. "
         "`checklist` rewrites the lines but never their ticks — use "
-        "`toggle_checklist_item`. To move it to another project, `move_task`."
+        "`toggle_checklist_item`. `task_type_id` changes its type (see "
+        "`list_task_types`) and keeps everything it holds. To move it to "
+        "another project, `move_task`."
     ),
     "move_task": (
         "Move a task to another project (`target_project_id`), into that "
-        "project's default column."
+        "project's default column. It keeps a type of the same name there, or "
+        "takes that project's default type."
     ),
     "toggle_checklist_item": (
         "Tick or untick one checklist item on a task, by the item's `id` from "

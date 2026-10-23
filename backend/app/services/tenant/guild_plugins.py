@@ -558,8 +558,6 @@ async def uninstall_plugin(
             "erase": erase,
         },
     )
-    if listing_uid:
-        plugin_entitlements.after_uninstall(session, guild_id, listing_uid)
 
 
 async def clear_static_connection(
@@ -1189,6 +1187,7 @@ async def show_on_saved_layouts(
     initiative_ids: Iterable[int],
     *,
     previous: Any = None,
+    only: Optional[tool_layouts_service.Target] = None,
 ) -> None:
     """Show the install's fields, then its parts, on the saved details of these
     initiatives, for each kind of item whose page draws plug-ins, and its task
@@ -1196,7 +1195,8 @@ async def show_on_saved_layouts(
     it does. After an upgrade, ``previous`` is the definition it replaced, and
     only what that did not declare is added. Once added, one a manager takes
     off stays off. A field one of its parts also shows is drawn once, where the
-    page is drawn."""
+    page is drawn. ``only`` keeps to one target's layouts: a project an import
+    has just laid out."""
     initiative_ids = list(initiative_ids)
     for kind in tool_layouts_service.PLUGIN_DETAILS:
         fields = _arriving(plugin.definition, previous, "fields", "key", kind)
@@ -1218,6 +1218,7 @@ async def show_on_saved_layouts(
                     for part in parts
                 ),
             ],
+            only=only,
         )
     await tool_layouts_service.add_to_saved_lists(
         session,
@@ -1226,7 +1227,26 @@ async def show_on_saved_layouts(
             f"{PLUGIN_FIELD_PREFIX}{plugin.id}:{key}"
             for key in _arriving(plugin.definition, previous, "fields", "key", "task")
         ],
+        only=only,
     )
+
+
+async def show_placed_on(
+    session: AsyncSession, target: tool_layouts_service.Target
+) -> None:
+    """Show every install placed in the target's initiative on the target's
+    saved layouts, as placing it did on the layouts saved then: a project an
+    import has just laid out draws them as a shipped one would."""
+    installs = await session.exec(
+        select(GuildPlugin)
+        .join(PluginPlacement, col(PluginPlacement.install_id) == GuildPlugin.id)
+        .where(PluginPlacement.initiative_id == target.initiative_id)
+        .order_by(col(GuildPlugin.id))
+    )
+    for plugin in installs.all():
+        await show_on_saved_layouts(
+            session, plugin, [target.initiative_id], only=target
+        )
 
 
 # --- opening a surface ------------------------------------------------------

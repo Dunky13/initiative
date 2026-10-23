@@ -57,6 +57,7 @@ __all__ = [
     "reissue_all_refs",
     "reissue_ref",
     "resolve_billing_ref",
+    "resolve_billing_refs",
     "resolve_ref",
     "resolve_refs",
 ]
@@ -248,6 +249,23 @@ async def resolve_billing_ref(ref: str, entity_type: IdentityEntity) -> int | No
     ):
         return None
     return row.entity_id
+
+
+async def resolve_billing_refs(
+    refs: Sequence[str], entity_type: IdentityEntity
+) -> dict[str, int]:
+    """Which user or guild each of many billing references names, in one read:
+    :func:`resolve_billing_ref` for a batch. A reference that names nothing of
+    that kind is left out."""
+    from app.db.session import SystemSessionLocal
+
+    async with SystemSessionLocal() as session:
+        rows = await resolve_refs(session, refs=refs)
+    return {
+        row.ref: row.entity_id
+        for row in rows
+        if row.entity_type == entity_type and row.purpose == IdentityPurpose.billing
+    }
 
 
 async def resolve_ref(

@@ -210,7 +210,6 @@ class GuildMessages:
     #: receive them.
     SUPPORT_INTAKE_NOT_CONFIGURED = "SUPPORT_INTAKE_NOT_CONFIGURED"
     COMMUNITY_CREATION_DISABLED = "COMMUNITY_CREATION_DISABLED"
-    FREE_COMMUNITY_ALREADY_HELD = "FREE_COMMUNITY_ALREADY_HELD"
     COMMUNITY_CREATION_LIMIT_REACHED = "COMMUNITY_CREATION_LIMIT_REACHED"
     #: A demo visitor's account holds its copy and creates no community.
     COMMUNITY_CREATION_DEMO_ACCOUNT = "COMMUNITY_CREATION_DEMO_ACCOUNT"
@@ -377,6 +376,8 @@ class ToolLayoutMessages:
     TOO_LARGE = "TOOL_LAYOUTS_TOO_LARGE"
     # More of one plug-in's parts on an item than it may place there.
     TOO_MANY_PLUGIN_PARTS = "TOOL_LAYOUTS_TOO_MANY_PLUGIN_PARTS"
+    # A change that would hide every one of a target's lists.
+    ONE_LIST_SHOWN = "TOOL_LAYOUTS_ONE_LIST_SHOWN"
 
 
 class ProjectMessages:
@@ -388,6 +389,7 @@ class ProjectMessages:
 
 
 class TaskMessages:
+    INVALID_RECURRENCE_LIMIT = "INVALID_RECURRENCE_LIMIT"
     #: The task was not opened by an intake stream.
     NOT_A_CASE = "TASK_NOT_A_CASE"
     #: The board column it would go into holds as many tasks as it takes.
@@ -396,6 +398,7 @@ class TaskMessages:
     CANNOT_MOVE_TO_TEMPLATE = "TASK_CANNOT_MOVE_TO_TEMPLATE"
     PROJECT_MISMATCH = "TASK_PROJECT_MISMATCH"
     STATUS_NOT_FOUND = "TASK_STATUS_NOT_FOUND_FOR_PROJECT"
+    TYPE_NOT_FOUND = "TASK_TYPE_NOT_FOUND_FOR_PROJECT"
     INVALID_ASSIGNEE_ID = "TASK_INVALID_ASSIGNEE_ID"
     NOT_REPEATING = "TASK_NOT_REPEATING"
     NO_LATER_OCCURRENCE = "TASK_NO_LATER_OCCURRENCE"
@@ -414,6 +417,15 @@ class TaskStatusMessages:
     CANNOT_REMOVE_LAST = "TASK_STATUS_CANNOT_REMOVE_LAST"
     FALLBACK_REQUIRED = "TASK_STATUS_FALLBACK_REQUIRED"
     FALLBACK_MUST_DIFFER = "TASK_STATUS_FALLBACK_MUST_DIFFER"
+
+
+class TaskTypeMessages:
+    NOT_FOUND = "TASK_TYPE_NOT_FOUND"
+    DUPLICATE_ID = "TASK_TYPE_DUPLICATE_ID"
+    NAME_TAKEN = "TASK_TYPE_NAME_TAKEN"
+    CANNOT_REMOVE_LAST = "TASK_TYPE_CANNOT_REMOVE_LAST"
+    FALLBACK_MUST_DIFFER = "TASK_TYPE_FALLBACK_MUST_DIFFER"
+    LIMIT_REACHED = "TASK_TYPE_LIMIT_REACHED"
 
 
 class OidcMessages:
@@ -749,6 +761,7 @@ class IntakeMessages:
     GUILD_NOT_ACTIVE = "INTAKE_COMMUNITY_NOT_ACTIVE"
     NO_OPERATIONS_GUILD = "INTAKE_NO_OPERATIONS_COMMUNITY"
     STATUS_NOT_IN_PROJECT = "INTAKE_STATUS_NOT_IN_PROJECT"
+    TYPE_NOT_IN_PROJECT = "INTAKE_TYPE_NOT_IN_PROJECT"
     PROJECT_NOT_LIVE = "INTAKE_PROJECT_NOT_LIVE"
     UNKNOWN_STREAM = "INTAKE_UNKNOWN_STREAM"
     #: A stream that keeps an initiative to itself, or one that would share
@@ -798,6 +811,9 @@ class AccessGrantMessages:
     GRANTEE_INELIGIBLE = "ACCESS_GRANT_GRANTEE_INELIGIBLE"
     #: A ``moderate`` grant is for those who hold ``content.moderate``.
     MODERATE_NOT_HELD = "ACCESS_GRANT_MODERATE_NOT_HELD"
+    #: Every grant but ``moderate`` is for those who hold
+    #: ``access.request_any``: a moderator asks for ``moderate`` alone.
+    ONLY_MODERATE = "ACCESS_GRANT_ONLY_MODERATE"
     #: A request names the operations case it is for, where the operations
     #: community takes cases a grant may serve.
     CASE_REQUIRED = "ACCESS_GRANT_CASE_REQUIRED"
@@ -994,6 +1010,8 @@ class ImportEngineMessages:
 class QueryMessages:
     INVALID_CONDITIONS = "QUERY_INVALID_CONDITIONS"
     INVALID_SORT_FIELDS = "QUERY_INVALID_SORT_FIELDS"
+    #: A field the list cannot be grouped by, or a bucket it does not take.
+    INVALID_GROUPING = "QUERY_INVALID_GROUPING"
     #: A view the tool does not have, such as templates of a tool with none.
     UNKNOWN_VIEW = "QUERY_UNKNOWN_VIEW"
 
@@ -1661,8 +1679,6 @@ class WebhookSubscriptionMessages:
 class AIMessages:
     INVALID_BASE_URL = "AI_INVALID_BASE_URL"
     CONNECTION_NOT_FOUND = "AI_CONNECTION_NOT_FOUND"
-    MEMBER_KEYS_DISABLED = "AI_MEMBER_KEYS_DISABLED"
-    MEMBER_KEY_NOT_FOUND = "AI_MEMBER_KEY_NOT_FOUND"
     INVALID_API_KEY = "AI_INVALID_API_KEY"
     NOT_ENABLED = "AI_NOT_ENABLED"
     #: No provider is chosen, or the chosen one needs a key and has none.
@@ -1674,6 +1690,16 @@ class AIMessages:
     DOCUMENT_EMPTY = "AI_DOCUMENT_EMPTY"
     #: The connection names a model its provider does not list.
     MODEL_NOT_FOUND = "AI_MODEL_NOT_FOUND"
+    #: The connection names no model yet.
+    MODEL_REQUIRED = "AI_MODEL_REQUIRED"
+    #: The community already has as many AI requests open as it may.
+    BUSY = "AI_BUSY"
+    #: The provider account has run out of credit or has a payment problem.
+    OUT_OF_CREDIT = "AI_OUT_OF_CREDIT"
+    #: A spend limit set on the provider account stopped the request.
+    SPEND_LIMIT_REACHED = "AI_SPEND_LIMIT_REACHED"
+    #: The provider kept refusing for too many requests.
+    RATE_LIMITED = "AI_RATE_LIMITED"
 
 
 class NativeMessages:
@@ -1705,21 +1731,15 @@ class BillingMessages:
     #: rather than a caller fault, so it answers alongside NOT_CONFIGURED.
     KEY_UNREADABLE = "BILLING_KEY_UNREADABLE"
     MISSING_SIGNATURE = "BILLING_MISSING_SIGNATURE"
-    STALE_TIMESTAMP = "BILLING_STALE_TIMESTAMP"
-    INVALID_SIGNATURE = "BILLING_INVALID_SIGNATURE"
+    #: The envelope didn't verify. The detail is ``BILLING_`` and the
+    #: envelope's own code (``BOUNDARY_EXPIRED``, ``BOUNDARY_WRONG_BODY``...).
     INVALID_TOKEN = "BILLING_INVALID_TOKEN"
     REPLAYED_TOKEN = "BILLING_REPLAYED_TOKEN"
     INVALID_PAYLOAD = "BILLING_INVALID_PAYLOAD"
     COMMUNITY_NOT_FOUND = "BILLING_COMMUNITY_NOT_FOUND"
-    SUPPORT_SOURCE_RESTRICTED = "BILLING_SUPPORT_SOURCE_RESTRICTED"
-    SUPPORT_CANNOT_LOWER = "BILLING_SUPPORT_CANNOT_LOWER"
-    OPERATOR_CANNOT_LOWER_CEILING = "BILLING_OPERATOR_CANNOT_LOWER_CEILING"
-    ACTOR_REQUIRED = "BILLING_ACTOR_REQUIRED"
     STATUS_NOT_SETTABLE = "BILLING_STATUS_NOT_SETTABLE"
-    #: A community notice from a source that does not send one.
-    NOTICE_SOURCE_NOT_ALLOWED = "BILLING_NOTICE_SOURCE_NOT_ALLOWED"
     #: The notice could not be written down. Nothing was recorded, so the same
-    #: event id may be sent again.
+    #: key may be sent again.
     NOTICE_NOT_DELIVERED = "BILLING_NOTICE_NOT_DELIVERED"
     PORTAL_NOT_CONFIGURED = "BILLING_PORTAL_NOT_CONFIGURED"
     PORTAL_SIGNING_NOT_CONFIGURED = "BILLING_PORTAL_SIGNING_NOT_CONFIGURED"
@@ -1729,8 +1749,12 @@ class BillingMessages:
     LISTING_HAS_NO_TERMS = "BILLING_LISTING_HAS_NO_TERMS"
     #: An entitlement statement that is not a compact JWS with the statement
     #: header (``alg`` EdDSA, ``typ`` initiative-entitlement+jwt), the issuer's
-    #: ``iss``, and every claim present with its type.
+    #: ``iss``, every claim present with its type, and a signature by the
+    #: statement key.
     INVALID_STATEMENT = "BILLING_INVALID_STATEMENT"
+    #: A batch item refused because it couldn't be applied; the rest of the
+    #: batch is answered on its own.
+    ITEM_FAILED = "BILLING_ITEM_FAILED"
 
 
 class DirectMessageMessages:

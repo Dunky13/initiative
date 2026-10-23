@@ -27,6 +27,7 @@ export const BUILTIN_SHAPES: Record<string, WidgetSlot[]> = {
     slot("start", ["date"]),
     slot("end", ["date"]),
     slot("group", LABEL, { required: false }),
+    slot("done", ["boolean"], { required: false }),
   ],
   stat: [slot("value", ["number"]), slot("label", LABEL, { required: false })],
   chart: [

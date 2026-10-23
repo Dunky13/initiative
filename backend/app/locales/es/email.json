@@ -449,6 +449,12 @@
     "body": "La prueba de <strong>{{community}}</strong> ha terminado y la comunidad ahora es de solo lectura. Elige un plan en el portal de facturación para seguir editando. No se ha eliminado nada.",
     "buttonLabel": "Elegir un plan"
   },
+  "communityPauseReminder": {
+    "subject": "El plan de {{community}} está congelado hasta que lo reanudes",
+    "title": "El plan de {{community}} está congelado",
+    "body": "El plan de <strong>{{community}}</strong> está congelado. Sus miembros pueden seguir leyendo y exportando todo, pero no se puede añadir nada nuevo y no se cobra nada. Reanuda el plan antes del <strong>{{date}}</strong> para conservar la comunidad: después queda en pausa y se elimina más adelante si no se restablece su plan.",
+    "buttonLabel": "Reanudar el plan"
+  },
   "communityWelcome": {
     "subject": "{{community}} está lista",
     "title": "{{community}} está lista",

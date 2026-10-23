@@ -155,6 +155,7 @@
   "filterField": {
     "status_category": "Statuskategorie",
     "task_status_id": "Status",
+    "task_type_id": "Typ",
     "priority": "Priorität",
     "assignee_ids": "Zuständig",
     "tag_ids": "Tag",
@@ -198,6 +199,7 @@
     "value": "Wert",
     "empty": "Keine Filter — zeigt alles in der Initiative.",
     "chooseValue": "Auswählen …",
+    "typeInProject": "{{type}} ({{project}})",
     "relative": "Relativ",
     "absolute": "An einem Datum",
     "relativeDays": "Tage ab heute",
@@ -255,7 +257,8 @@
     "column": "Spalte",
     "date": "Datum",
     "total": "Gesamt",
-    "series": "Aufteilen nach"
+    "series": "Aufteilen nach",
+    "done": "Erledigt"
   },
   "builder": {
     "dataset": "Daten aus",
@@ -305,7 +308,8 @@
     "counter_groups": "Zählergruppen",
     "task_statuses": "Aufgabenstatus",
     "property_values": "Eigenschaftswerte",
-    "property_definitions": "Eigenschaften"
+    "property_definitions": "Eigenschaften",
+    "relationships": "Verknüpfungen"
   },
   "viewMode": {
     "label": "Dashboard ausführen als",

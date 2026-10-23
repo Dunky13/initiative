@@ -13,7 +13,9 @@ See plan & ``project_export.py`` for the format. The algorithm:
    of mutating the target's existing one.
 7. Insert each task; resolve status / tag / assignee / property refs
    via the maps; insert property values.
-8. Return the counts as an :class:`EnvelopeImportResult`, like every
+8. Store its layouts, their statuses and properties the new ones, and show
+   the plug-ins placed in the initiative on them.
+9. Return the counts as an :class:`EnvelopeImportResult`, like every
    importer's apply.
 """
 
@@ -21,21 +23,27 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from typing import Any, Optional
+
+from pydantic import ValidationError
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core import recurrence
-from app.core.messages import ProjectExportMessages
+from app.schemas.recurrence import validate_task_recurrence
+from app.core.messages import ImportEngineMessages, ProjectExportMessages
 from app.core.search import SearchEntityType
 from app.models.tenant.comment import Comment
 from app.models.tenant.initiative import Initiative
 from app.models.tenant.project import Project
+from app.models.tenant.property import PropertyType
 
 from app.models.tenant.task import (
     Task,
     TaskAssignee,
     TaskStatus,
     TaskStatusCategory,
+    TaskType,
 )
 from app.models.platform.user import User
 from app.schemas.tenant.project_export import (
@@ -45,6 +53,7 @@ from app.schemas.tenant.project_export import (
     ProjectExportTask,
 )
 from app.schemas.tenant.task import mint_checklist_item_id
+from app.schemas.tenant.task_type import TaskTypeStartingValues
 from app.services.import_engine.context import ImportContext
 from app.services.import_engine.contract import (
     EnvelopeImportResult,
@@ -66,14 +75,18 @@ from app.services.import_engine.people import (
     quoted_account,
     bring_in_named,
 )
+from app.services.tenant import guild_plugins as guild_plugins_service
 from app.services.tenant import task_completion
+from app.services.tenant import tool_layouts as tool_layouts_service
 from app.services.tenant.task_statuses import defaults_for_category
+from app.services.tenant import task_types as task_types_service
+from app.core.task_types import LAYOUT_SHAPES, MAX_TASK_TYPES
 from app.services.import_engine.common import (
     load_initiative_member_handles,
     handle_key,
     unique_name_in_initiative,
 )
-from app.core.tools import Tool
+from app.core.tools import TYPED_DETAILS, Tool
 from app.services.tenant.named_people import Governing
 
 
@@ -137,6 +150,8 @@ async def import_project(
     # 2. Task statuses → name → id map
     status_name_to_id: dict[str, int] = {}
     status_id_to_category: dict[int, TaskStatusCategory] = {}
+    # Each status by its place in the envelope, which is how a layout names it.
+    status_by_place: dict[int, int] = {}
     default_status_id: int | None = None
     for s in envelope.task_statuses:
         default_color, default_icon = defaults_for_category(s.category)
@@ -153,6 +168,7 @@ async def import_project(
         await session.flush()
         status_name_to_id[s.name] = status_row.id  # ty: ignore[invalid-assignment] — persisted row, id is set
         status_id_to_category[status_row.id] = s.category  # ty: ignore[invalid-assignment] — persisted row, id is set
+        status_by_place[len(status_by_place) + 1] = status_row.id  # ty: ignore[invalid-assignment] — persisted row, id is set
         if s.is_default and default_status_id is None:
             default_status_id = status_row.id
     if default_status_id is None:
@@ -165,6 +181,21 @@ async def import_project(
             ),
             status_name_to_id[envelope.task_statuses[0].name],
         )
+
+    # 2b. Task types → lowercased name → id map. An export taken before types
+    # existed gives the project the ones a new project starts with, in the
+    # importer's language.
+    type_name_to_id = await _restore_types(session, project.id, envelope, importer)
+    default_type_id = next(iter(type_name_to_id.values()))
+    for task_type in await task_types_service.list_types(session, project.id):
+        if task_type.is_default:
+            default_type_id = task_type.id
+    # A layout names a type by its place in the envelope, as it does a status.
+    type_by_place = {
+        place: type_name_to_id[entry.name.strip().lower()]
+        for place, entry in enumerate(envelope.task_types, start=1)
+        if entry.name.strip().lower() in type_name_to_id
+    }
 
     # 3. Tags, attached to the project
     tags = TagRestore(session)
@@ -197,6 +228,8 @@ async def import_project(
             status_name_to_id=status_name_to_id,
             status_id_to_category=status_id_to_category,
             default_status_id=default_status_id,
+            type_name_to_id=type_name_to_id,
+            default_type_id=default_type_id,
             tags=tags,
             props=props,
             initiative_member_handles=initiative_member_handles,
@@ -209,6 +242,48 @@ async def import_project(
         comment_count += comments_made
 
     await session.flush()
+    # 6. Its layouts, naming the statuses and properties it now has, with the
+    # plug-ins placed here shown on them as they are on every saved layout.
+    if envelope.layouts:
+        property_by_place = {
+            place: props.bound_id(declared.name, declared.type)
+            for place, declared in enumerate(envelope.property_definitions, start=1)
+        }
+        remap = tool_layouts_service.Remap(
+            statuses=status_by_place.get,
+            properties=property_by_place.get,
+            community=False,
+            people=frozenset(
+                place
+                for place, declared in enumerate(envelope.property_definitions, start=1)
+                if declared.type == PropertyType.user_reference
+            ),
+            types=type_by_place.get,
+        )
+        target = tool_layouts_service.Target(
+            Tool.project, project.id, target_initiative.id
+        )
+        await tool_layouts_service.restore_layouts(
+            session,
+            target,
+            (
+                tool_layouts_service.Restored(
+                    layout.kind,
+                    tool_layouts_service.remapped_definition(layout.definition, remap),
+                    task_type_id=(
+                        None
+                        if layout.kind != TYPED_DETAILS[Tool.project]
+                        # A type the envelope does not list leaves its page
+                        # out, drawn as its type's shape.
+                        else type_by_place.get(layout.task_type)
+                        if layout.task_type is not None
+                        else default_type_id
+                    ),
+                )
+                for layout in envelope.layouts
+            ),
+        )
+        await guild_plugins_service.show_placed_on(session, target)
     # One pass lets in everyone the project now names, assignees and person
     # values alike.
     named_handles.update(props.named)
@@ -245,6 +320,62 @@ async def import_project(
 # ---------------------------------------------------------------------------
 
 
+def _starting_values(raw: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """A type's starting values as the column holds them, held to what a write
+    of them would be; ones that are not start nothing."""
+    if not raw:
+        return None
+    try:
+        values = TaskTypeStartingValues.model_validate(raw)
+    except ValidationError:
+        return None
+    return task_types_service.stored_starting_values(values)
+
+
+async def _restore_types(
+    session: AsyncSession,
+    project_id: int,
+    envelope: ProjectExportEnvelope,
+    importer: User,
+) -> dict[str, int]:
+    """The project's task types from the envelope, or the ones a new project
+    starts with when it carries none; each by its lowercased name. A name the
+    envelope repeats is one type, and a shape this build does not draw is the
+    plain one."""
+    if not envelope.task_types:
+        created = await task_types_service.ensure_default_types(
+            session, project_id, locale=importer.locale
+        )
+        return {t.name.lower(): t.id for t in created}  # ty: ignore[invalid-return-type] — persisted rows, ids are set
+    rows: list[TaskType] = []
+    seen: set[str] = set()
+    for entry in sorted(envelope.task_types, key=lambda t: t.position)[:MAX_TASK_TYPES]:
+        name = entry.name.strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        rows.append(
+            TaskType(
+                project_id=project_id,
+                name=name,
+                is_default=entry.is_default,
+                color=entry.color or "#94A3B8",
+                icon=entry.icon or "square-check",
+                layout_preset=(
+                    entry.layout_preset
+                    if entry.layout_preset in LAYOUT_SHAPES
+                    else "plain"
+                ),
+                starting_values=_starting_values(entry.starting_values),
+            )
+        )
+    task_types_service.resequence(rows)
+    task_types_service.ensure_one_default(rows)
+    session.add_all(rows)
+    await session.flush()
+    return {t.name.lower(): t.id for t in rows}  # ty: ignore[invalid-return-type] — persisted rows, ids are set
+
+
 async def _import_task(
     session: AsyncSession,
     *,
@@ -255,6 +386,8 @@ async def _import_task(
     status_name_to_id: dict[str, int],
     status_id_to_category: dict[int, TaskStatusCategory],
     default_status_id: int,
+    type_name_to_id: dict[str, int],
+    default_type_id: int,
     tags: TagRestore,
     props: PropertyRestore,
     initiative_member_handles: dict[str, int],
@@ -275,9 +408,21 @@ async def _import_task(
         tz=importer_zone,
         shift=envelope_task.recurrence_shift,
     )
+    try:
+        validate_task_recurrence(
+            rule=repeat,
+            strategy=envelope_task.recurrence_strategy,
+            limit=envelope_task.recurrence_limit,
+            due=envelope_task.due_date,
+        )
+    except ValueError as exc:
+        raise ImportEngineError(ImportEngineMessages.IMPORT_INVALID_ENVELOPE) from exc
     task = Task(
         project_id=project_id,
         task_status_id=status_id,
+        task_type_id=type_name_to_id.get(
+            (envelope_task.type_name or "").strip().lower(), default_type_id
+        ),
         title=envelope_task.title,
         description=_link_mentions(
             envelope_task.description,
@@ -290,8 +435,11 @@ async def _import_task(
         due_date=envelope_task.due_date,
         recurrence=repeat,
         recurrence_shift=shift,
+        recurrence_anchor=envelope_task.recurrence_anchor,
+        recurrence_anchor_count=envelope_task.recurrence_anchor_count,
         recurrence_strategy=envelope_task.recurrence_strategy,
         recurrence_occurrence_count=envelope_task.recurrence_occurrence_count,
+        recurrence_limit=envelope_task.recurrence_limit,
         position=envelope_task.position,
         archived_at=envelope_task.archived_at,
         completed_at=envelope_task.completed_at,
@@ -364,7 +512,21 @@ async def _import_task(
                     # Brought into the initiative with the task's own assignees.
                     named_handle_sink.setdefault(uid, handle)
             carry["assignee_ids"] = sorted(carried)
+        # A type by its name, as the task's own is; an id is another project's.
+        carry.pop("task_type_id", None)
+        carried_type = type_name_to_id.get(
+            str(carry.pop("type_name", "") or "").strip().lower()
+        )
+        if carried_type is not None:
+            carry["task_type_id"] = carried_type
         task.recurrence_carry = carry
+
+    if envelope_task.recurrence_anchor is None and task.recurrence:
+        # Older envelopes have no phase metadata. Match their effective
+        # continuation, including a date kept back by a this-only edit.
+        from app.services.tenant.task_series import anchor_from_dates
+
+        task.recurrence_anchor, task.recurrence_anchor_count = anchor_from_dates(task)
 
     # Assignees: the account a person mapped the handle to, else a member
     # whose handle is the same string (see ``people.initiative_member_id``).

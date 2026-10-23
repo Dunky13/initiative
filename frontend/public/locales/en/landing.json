@@ -11,9 +11,9 @@
     "skip": "Skip to content"
   },
   "hero": {
-    "titleLine1": "Out of the group chat.",
-    "titleLine2": "Into one place.",
-    "titleAria": "Out of the group chat. Into one place.",
+    "titleLine1": "Your group has a lot going on.",
+    "titleLine2": "It's time to take the Initiative.",
+    "titleAria": "Your group has a lot going on. It's time to take the Initiative.",
     "subtitle": "Your group's projects, tasks, files and plans, in one place. Instead of across a group chat, two spreadsheets, an email thread from March, and the head of whoever's been doing this the longest.",
     "freeTitle": "Free to sign up",
     "freeBody": "Your account and your first community are free, and every paid plan starts with a 14-day free trial.",
@@ -69,6 +69,46 @@
     "wikis": "Write down what the group knows, with links that keep working after a rename.",
     "posts": "Announcements that don't get buried, with polls and read receipts.",
     "galleries": "The photos from the day, together instead of in six people's camera rolls."
+  },
+  "together": {
+    "titleStart": "Built for doing it",
+    "titleHighlight": "together",
+    "description": "Three people on the same plan at once, with nobody's copy winning and no \"which version is this\". Share a page with the whole group or just the committee, give a task to two people, and @mention whoever's next.",
+    "drawingAria": "A drawing of three people editing the same plan at once, with comments landing in the margin",
+    "people": {
+      "maya": "Maya",
+      "dev": "Dev",
+      "priya": "Priya",
+      "hana": "Hana"
+    },
+    "doc": {
+      "title": "Cookout plan",
+      "sharedWith": "Shared with the committee",
+      "live": "Live",
+      "heading": "Season kickoff cookout",
+      "line1": "Saturday right after the game, Riverside Park. Everyone brings a chair.",
+      "line2Start": "Food gets going at",
+      "line2Selected": "11:30",
+      "line2End": ", so set-up starts at 9.",
+      "task1": "Ask the park about the grill spot",
+      "task2": "Borrow folding tables from the church hall",
+      "typed": "Dev brings the grill, Luis the ice, and"
+    },
+    "comments": {
+      "title": "Comments",
+      "justNow": "just now",
+      "mention": "@Luis",
+      "text": "can you be there by 9 to help set up?",
+      "reply": "I'll come early too, I have a trolley for the tables"
+    },
+    "points": {
+      "sameTitle": "Same page, literally",
+      "sameBody": "Pages, spreadsheets and whiteboards update as people type, with everyone's cursor where they are. Nobody emails back a copy.",
+      "shareTitle": "Share as much as you mean to",
+      "shareBody": "A board for the whole group, a budget for the three people who need it. Everyone sees only what they've been given.",
+      "handTitle": "Hand things over, out loud",
+      "handBody": "Give a task to two people, @mention whoever's next, and the conversation stays on the thing it's about."
+    }
   },
   "hangout": {
     "titleStart": "This is where your community",
@@ -351,7 +391,7 @@
     "error": "Couldn't load what's new. Give it a minute and try again."
   },
   "meta": {
-    "homeTitle": "Initiative: out of the group chat, into one place",
+    "homeTitle": "Initiative: your group has a lot going on, and it's time to take the Initiative",
     "homeDescription": "Your group's projects, tasks, files, events and conversations in one place, on the web, Android, iPhone and your computer.",
     "downloadTitle": "Download Initiative",
     "downloadDescription": "Get Initiative on Android, iPhone, iPad or your computer, or keep using it in the browser.",

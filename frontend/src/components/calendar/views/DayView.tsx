@@ -9,6 +9,7 @@ import {
   type CalendarGridViewProps,
   DayColumn,
   dateKey,
+  EntryType,
   HourGutter,
   kindLabelKey,
 } from "./shared";
@@ -22,7 +23,10 @@ export function DayView({
 }: CalendarGridViewProps) {
   const { t } = useTranslation(["common"]);
 
-  const entriesByDate = useMemo(() => buildEntriesByDate(entries), [entries]);
+  const entriesByDate = useMemo(
+    () => buildEntriesByDate(entries, { start: focusDate, end: focusDate }),
+    [entries, focusDate]
+  );
   const dayEntries = entriesByDate.get(dateKey(focusDate)) ?? [];
   const allDayEntries = dayEntries.filter((e) => e.allDay);
 
@@ -52,6 +56,7 @@ export function DayView({
                   {t(`common:${kindLabelKey(entry.kind)}`)}
                 </span>
               )}
+              <EntryType entry={entry} onColor />
               <span className="truncate">{entry.title}</span>
               {entry.unread ? <UnreadDot className="ml-auto ring-1 ring-background" /> : null}
             </button>

@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-10-23
+
+### Added
+
+- **Task types.** Every project starts with **Task**, **Bug**, **Idea** and **Milestone**, each with its own task page and starting content; add more from a shelf of ready-made types in **Project settings → Task types**. Existing tasks become **Task**, keeping any task page you had changed.
+
+  ![A project's task types in Project settings: Task, Bug, Idea and Milestone, each with its own icon, color and page](docs/images/releases/task-types.webp)
+
+- **Gantt view for projects.** Tasks as bars on a day, week or month timeline: drag to reschedule, drag between bars to make one task wait on another, and fold subtasks under their parent. A project that opened on its Calendar opens on its Gantt.
+
+  ![A project's Gantt view: tasks as bars across six weeks, a milestone at the end, and arrows from each task to what it waits on](docs/images/releases/gantt.webp)
+
+- **Type a task's details into its title.** "Send the invoice every third tuesday at 3pm !high #billing @sam" sets the repeat, time, priority, tag and assignee; `every!` counts the repeat from when you finish, and `@` opens a member search. Switch it off with **Read details from the title** in **Preferences**.
+
+  ![Create task with "Restock the healing potions every third tuesday at 3pm !high #quest" and a person in its title, each part highlighted and listed underneath, and the priority, assignee and due date filled in](docs/images/releases/title-details.webp)
+
+- **Group by any field.** Group a table, board or Gantt by any field whose values repeat, from assignees and tags to a property or a date by week or month. Choose what each view offers in **Edit layouts**.
+
+  ![A project's Gantt grouped by assignee, each person's tasks under their name and unassigned work at the end](docs/images/releases/group-by-assignees.webp)
+
+- **Choose a project's views.** Show or hide Table, Board, Gantt and Calendar in **Edit layouts**. Every project shows all four until you hide some.
+- **Several My tasks widgets on Home.** Each keeps its own filters and columns, so one can show this week's work and another everything high priority.
+- **Task exports match your table.** PDF, spreadsheet and Markdown exports use the table's columns, properties included, and its grouping (#2911). A project's report from its settings does the same.
+- **Hourly repeats after completion.** Repeat a task a set number of hours after it is finished, with an optional daily maximum.
+- **New projects start in your language.** Their starting statuses and task types are named in the language of whoever makes the project.
+- **Projects keep their layouts when they travel.** Exported and marketplace projects import with their cards, columns, task page and opening view, and the marketplace's ready-made projects arrive laid out.
+- **More AI providers.** Connect Google Gemini, DeepSeek, Groq, xAI, Together AI, OpenRouter or any OpenAI-compatible server, such as vLLM or LM Studio; OpenAI connections can use every OpenAI model. **Server operators:** you can allow an OpenAI-compatible server on your own network, as with Ollama.
+- **AI per community.** On a platform-managed server, the owner can give particular communities their own AI connection, and a community's superadmin can switch AI off for that community. A failing AI request says why: out of credit, a spending limit, or rate-limiting.
+- **Dashboards can read links.** The SQL tab's `relationships` table lists what each thing is linked to, so a dashboard Gantt can group subtasks under their parent. You see only links whose both ends you can see.
+- **The front page shows people working together.** A new section draws three people on one plan: live cursors, a comment in the margin, and a task handed on.
+- **Plug-ins can use task types.** Plug-in API 8.1 (initiative-plugin-sdk 8.1) reads and sets task types; plug-ins built for 8.0 keep working.
+
+### Changed
+
+- **Finished things are no longer struck through.** Done checklist items, tasks and steps stay readable; the ticked checkbox and muted text show they are finished.
+- **AI connections name their model.** After saving a connection, pick a model from its provider's list; a connection without one, including any that relied on a default, is not used until somebody picks one. Changing a connection's provider or address clears its key unless you enter it again.
+- **New versions no longer interrupt you.** A small message offers **Reload** when a new version is ready, and **What's new** shows what changed.
+- **The browser tab names the tool you are in.** Every tool's page, settings and what it holds (a task, a wiki page) show its name in the tab, as projects already did.
+- **Release notes show what changed.** The version window opens the newest release, with pictures of what is new, and folds older releases away until you open them.
+- **Moderators moderate only.** The platform ladder runs member → moderator → support → operator → owner: a moderator finds, renames and suspends accounts, clears their profiles, and asks for **Moderate** grants on a community, and nothing more. **Server operators:** account recovery moved to support, so give that role to anyone who does it.
+
+### Removed
+
+- **Personal AI keys.** Everyone uses the default AI connection the community or server operator sets up, and the **AI** page in profile settings is gone. Keys members had added are deleted, so a connection that relied on them has no key until its owner adds one.
+- **My tasks' calendar.** My tasks on Home is a table; **My Calendar** shows your dated tasks beside everyone's events.
+
+### Fixed
+
+- **Calendar times and dates.** All-day and timed events keep their days and hours across clock changes, long events show across the whole month or year, and invalid or nonexistent local times show an error.
+- **Repeating tasks and calendar feeds.** Extra and skipped dates keep a task's cadence and remaining count, yearly month-end repeats keep every month, and calendar imports and exports keep durations and time zones.
+- **Dashboard Gantt progress counts finished work.** Give the tile a column saying whether work is **Done** to fill each bar as its work finishes; without one, bars stay unfilled.
+- **Statistics and dashboard dates.** Completion statistics use when a task was completed, and SQL calendar dates keep their day in every time zone. Calendar and notice API inputs that are instants need an explicit time zone offset.
+- **Email-code sign-in works in the apps.** On servers that ask for a captcha, the phone and desktop apps show it and send the code, with no change to the captcha provider's settings.
+- **Bitwarden passkeys work in the Android app.** **Server operators:** Bitwarden checks your server through Google, so this needs a server Google can reach.
+- **Export selected and Focus work again.** Export selected works with any filter, and Focus shows your pinned tasks.
+- **AI works with current Claude models.** Suggestions and summaries work with models that think before they answer.
+- **Running as a non-root user.** The container starts under Docker's `user:` or Kubernetes' `runAsUser` and runs as that user, without `PUID`/`PGID`, so the uploads folder must already be writable by it. The first log line says how it started.
+- **"Starts grouped by" reaches everyone.** A project list opens grouped the way its layout says for anyone who hasn't picked a grouping of their own.
+- **Calendar subscriptions.** A subscribed calendar is named after the calendar and its initiative, in your own time zone. To rename one you already subscribed to, subscribe to its link again.
+- **Updating the app.** The phone and desktop apps show one prompt for a new version, and **Reload** always installs it.
+- **Home on a phone.** Customizing keeps the view tabs and widget buttons clear of each other and of widget titles, long names wrap, and the calendar widget is no longer a card inside a card.
+- **A long title shows whole on a phone.** The title of a task, event, counter or picture wraps onto more lines, with its buttons on a row above it.
+- **Spacing on a layout you changed.** Board cards and pages you changed in **Edit layouts** keep their spacing.
+
+### Security
+
+- **Node.js October 2026 security releases.** The desktop app downloads app updates through its built-in browser instead of Node.js, and the image is built on Node.js 24.22.1.
+
 ## [0.76.0] - 2026-10-20
 
 ### Added

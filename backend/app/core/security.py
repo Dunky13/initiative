@@ -68,12 +68,14 @@ def load_verification_keys(pem_bundle: str) -> tuple[Any, ...]:
 
 
 # Deliberately constants, not settings: each signing key has one algorithm.
-#: Tokens this deployment both mints and verifies, and the shared-secret
-#: billing console handoffs: :func:`sign_hs256` / :func:`verify_hs256`.
+#: Tokens this deployment both mints and verifies: :func:`sign_hs256` /
+#: :func:`verify_hs256`.
 JWT_ALGORITHM = "HS256"
 #: Tokens another service verifies against the public half of one of our
-#: keys (billing handoffs; plug-in context, lifecycle and page handoff
-#: tokens), and the tokens we verify from billing: :func:`sign_eddsa`.
+#: keys (billing handoffs, the support and operator consoles' included, and
+#: the envelope on our requests to billing; plug-in context, lifecycle and
+#: page handoff tokens), and the tokens we verify from billing:
+#: :func:`sign_eddsa`.
 #: Ed25519, the one kind of key on any boundary.
 PUBLIC_KEY_JWT_ALGORITHM = "EdDSA"
 
@@ -90,8 +92,7 @@ def sign_hs256(
 ) -> str:
     """Sign ``payload`` as an HS256 JWT.
 
-    ``key`` defaults to the deployment's JWT signing key; a handoff into a
-    service that shares a secret with us passes that secret instead.
+    ``key`` defaults to the deployment's JWT signing key.
     """
     return jwt.encode(
         payload,
@@ -591,9 +592,13 @@ def create_billing_portal_handoff_token(
     guild_role: str,
     user_ref: str,
     guild_ref: str,
+    guild_name: str | None = None,
     expires_in: timedelta = BILLING_PORTAL_HANDOFF_LIFETIME,
 ) -> tuple[str, int]:
     """Mint the billing-portal handoff token (EdDSA; raises if unconfigured).
+
+    ``community_name`` is what the community calls itself, so the portal can
+    title its pages and billing keep its copy current.
 
     ``user_ref`` / ``guild_ref`` are the only names for the pair that cross —
     see ``services.platform.identity_refs.billing_refs``. ``sub`` carries the
@@ -613,6 +618,8 @@ def create_billing_portal_handoff_token(
         "user_ref": user_ref,
         "community_ref": guild_ref,
     }
+    if guild_name:
+        payload["community_name"] = guild_name
     token = sign_eddsa(payload, *_resolve_handoff_signing_material())
     return token, int(expires_in.total_seconds())
 
@@ -657,6 +664,40 @@ def create_billing_contracts_handoff_token(
     read-only page, from opening a console that writes.
     """
     return _billing_staff_handoff(BILLING_CONTRACTS_AUDIENCE, user_ref, expires_in)
+
+
+BILLING_DIRECTORY_AUDIENCE = "initiative:billing-directory"
+
+
+def create_billing_directory_handoff_token(
+    *,
+    user_ref: str,
+    expires_in: timedelta = BILLING_INSIGHTS_HANDOFF_LIFETIME,
+) -> tuple[str, int]:
+    """Mint the handoff into the billing service's owner directory.
+
+    The same shape again under the directory's audience: a person and no
+    community, because the page lists every account. The audience is what
+    keeps an operator's insights or contracts handoff from opening it.
+    """
+    return _billing_staff_handoff(BILLING_DIRECTORY_AUDIENCE, user_ref, expires_in)
+
+
+BILLING_CONTROL_AUDIENCE = "initiative:billing-control"
+
+
+def create_billing_control_handoff_token(
+    *,
+    user_ref: str,
+    expires_in: timedelta = BILLING_INSIGHTS_HANDOFF_LIFETIME,
+) -> tuple[str, int]:
+    """Mint the handoff into the billing service's Control, where owners
+    define the deployment's plans.
+
+    A person and no community, under Control's own audience: what it changes
+    is every community's, and no other door's handoff may open it.
+    """
+    return _billing_staff_handoff(BILLING_CONTROL_AUDIENCE, user_ref, expires_in)
 
 
 def _billing_staff_handoff(
@@ -755,28 +796,20 @@ BILLING_SUPPORT_HANDOFF_MAX_LIFETIME = timedelta(seconds=300)
 
 
 class BillingSupportHandoffNotConfiguredError(RuntimeError):
-    """Raised when a billing-support handoff is requested but the shared
-    signing material is absent. Fails closed — the caller returns 503."""
-
-
-def _billing_console_key(console: str) -> tuple[str | None, str | None]:
-    if console == BILLING_OPERATOR_CONSOLE:
-        return (
-            settings.BILLING_OPERATOR_HANDOFF_SECRET,
-            settings.BILLING_OPERATOR_HANDOFF_KID,
-        )
-    return (
-        settings.BILLING_SUPPORT_HANDOFF_SECRET,
-        settings.BILLING_SUPPORT_HANDOFF_KID,
-    )
+    """Raised when a billing console handoff is requested but this deployment
+    can't mint one: no billing portal, or no Ed25519 handoff key. Fails closed —
+    the caller returns 503."""
 
 
 def billing_support_handoff_enabled(
     console: str = BILLING_SUPPORT_CONSOLE,
 ) -> bool:
-    """True when this deployment can mint handoffs into ``console``."""
-    secret, kid = _billing_console_key(console)
-    return bool(secret and kid)
+    """True when this deployment can mint handoffs into ``console``: signed
+    with the same Ed25519 key as every other handoff into billing, under the
+    console's own audience."""
+    return console in BILLING_CONSOLES and bool(
+        settings.BILLING_URL and settings.HANDOFF_SIGNING_PRIVATE_KEY_PEM
+    )
 
 
 def create_billing_support_handoff_token(
@@ -801,10 +834,10 @@ def create_billing_support_handoff_token(
         raise BillingSupportHandoffNotConfiguredError(
             f"unknown billing console {console!r}"
         )
-    secret, kid = _billing_console_key(console)
-    if not (secret and kid):
+    if not billing_support_handoff_enabled(console):
         raise BillingSupportHandoffNotConfiguredError(
-            f"the billing {console} console's handoff secret and kid are not configured"
+            f"the billing {console} console's handoff needs BILLING_URL and"
+            " HANDOFF_SIGNING_PRIVATE_KEY_PEM"
         )
     lifetime = min(expires_in, BILLING_SUPPORT_HANDOFF_MAX_LIFETIME)
     now = datetime.now(timezone.utc)
@@ -821,5 +854,9 @@ def create_billing_support_handoff_token(
     }
     if approver_ref is not None:
         payload["approver"] = approver_ref
-    token = sign_hs256(payload, key=secret, headers={"kid": kid})
+    try:
+        material = _resolve_handoff_signing_material()
+    except HandoffSigningNotConfiguredError as exc:
+        raise BillingSupportHandoffNotConfiguredError(str(exc)) from exc
+    token = sign_eddsa(payload, *material)
     return token, int(lifetime.total_seconds())

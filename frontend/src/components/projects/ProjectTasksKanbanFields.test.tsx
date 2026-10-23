@@ -92,6 +92,7 @@ describe("a board's card", () => {
               {
                 kind: "board",
                 is_default: true,
+                hidden: false,
                 // As the server sends a board changed to hold no card.
                 definition: { card: null, columns: null },
                 updated_at: "2026-10-01T12:00:00.000Z",
@@ -116,6 +117,7 @@ describe("a board's card", () => {
               {
                 kind: "board",
                 is_default: true,
+                hidden: false,
                 definition: {
                   card: {
                     type: "card",
@@ -180,6 +182,18 @@ describe("a card's excerpt", () => {
 });
 
 describe("a grouped board", () => {
+  // The server's groups by priority: every one, most urgent first.
+  beforeEach(() => {
+    server.use(
+      communityHttp.get("/tasks/groups", () =>
+        HttpResponse.json({
+          groups: ["urgent", "high", "medium", "low"].map((key) => ({ key })),
+          rows: { "51": ["medium"] },
+        })
+      )
+    );
+  });
+
   it("starts in its layout's bands, one for every priority, holding a task or not", async () => {
     server.use(
       communityHttp.get("/layouts/", () =>
@@ -189,6 +203,7 @@ describe("a grouped board", () => {
               {
                 kind: "board",
                 is_default: true,
+                hidden: false,
                 definition: { group_by: "priority" },
                 updated_at: "2026-10-01T12:00:00.000Z",
               },
@@ -217,6 +232,7 @@ describe("a grouped board", () => {
               {
                 kind: "board",
                 is_default: true,
+                hidden: false,
                 definition: { group_by: "priority" },
                 updated_at: "2026-10-01T12:00:00.000Z",
               },
@@ -254,6 +270,7 @@ describe("a limited column", () => {
               {
                 kind: "board",
                 is_default: true,
+                hidden: false,
                 definition: { limits: [{ status_id: todo.id, limit: 3 }] },
                 updated_at: "2026-10-01T12:00:00.000Z",
               },

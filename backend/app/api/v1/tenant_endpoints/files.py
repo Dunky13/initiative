@@ -771,7 +771,7 @@ async def generate_summary(
     # Written down before the request goes out, since the disclosure does not
     # wait on the reply: which file, which connection, which provider, and
     # none of the text. A configuration that sends nothing records nothing.
-    resolved = await resolve_ai_settings(session, current_user, guild_context.guild_id)
+    resolved = await resolve_ai_settings(session, guild_context.guild_id)
     if resolved.enabled and resolved.provider is not None:
         await audit_service.record(
             session,

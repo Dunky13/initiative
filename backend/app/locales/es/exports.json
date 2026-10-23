@@ -1,22 +1,4 @@
 {
-  "columns": {
-    "task": "Tarea",
-    "project": "Proyecto",
-    "status": "Estado",
-    "priority": "Prioridad",
-    "due": "Vence",
-    "assignees": "Asignados",
-    "counter": "Contador",
-    "count": "Valor",
-    "min": "Mín",
-    "max": "Máx",
-    "step": "Paso",
-    "order": "N.º",
-    "item": "Elemento",
-    "member": "Miembro",
-    "tags": "Etiquetas",
-    "notes": "Notas"
-  },
   "title": {
     "tasks": "Tareas"
   },
@@ -62,5 +44,64 @@
   "fallback": {
     "untitled": "(sin título)",
     "formerMember": "Exmiembro"
+  },
+  "fields": {
+    "tag_ids": "Etiquetas",
+    "assignee_ids": "Asignados",
+    "task_status_id": "Estado",
+    "task_type_id": "Tipo",
+    "priority": "Prioridad",
+    "date_group": "Periodo",
+    "project_id": "Proyecto",
+    "created_by": "Creado por",
+    "archived_at": "Archivado",
+    "completed_at": "Completado",
+    "created_at": "Creado",
+    "due_date": "Vence",
+    "start_date": "Inicio",
+    "updated_at": "Actualizado",
+    "title": "Tarea",
+    "description": "Descripción",
+    "checklist": "Lista de verificación",
+    "comments": "Comentarios",
+    "blockers": "Bloqueada por",
+    "label": "Elemento",
+    "user_id": "Miembro",
+    "notes": "Notas",
+    "order": "N.º",
+    "status": "Estado",
+    "name": "Contador",
+    "count": "Valor",
+    "min": "Mín",
+    "max": "Máx",
+    "step": "Paso"
+  },
+  "groups": {
+    "empty": {
+      "tag_ids": "Sin etiqueta",
+      "assignee_ids": "Sin asignar",
+      "created_by": "Sin autor"
+    },
+    "none": "Sin {{name}}",
+    "true": "{{name}}: sí",
+    "false": "{{name}}: no",
+    "bucket": {
+      "day": "{{date}}",
+      "week": "Semana del {{date}}",
+      "month": "{{month}}/{{year}}",
+      "quarter": "T{{quarter}} {{year}}",
+      "year": "{{year}}"
+    }
+  },
+  "date_group": {
+    "0": "Vencidas",
+    "1": "Hoy",
+    "2": "Esta semana",
+    "3": "Este mes",
+    "4": "Más adelante"
+  },
+  "values": {
+    "yes": "Sí",
+    "no": "No"
   }
 }

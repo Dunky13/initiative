@@ -57,6 +57,8 @@ class ControlKind(str, Enum):
     #: for every enum the database already defines, rather than one per list.
     select = "select"
     task_status = "task_status"
+    #: One of a project's task types.
+    task_type = "task_type"
     #: One task, chosen from the ones in reach. What a row hanging off a task
     #: points back at.
     task = "task"
@@ -107,6 +109,7 @@ _RANGE = frozenset({FilterOp.lt, FilterOp.lte, FilterOp.gt, FilterOp.gte})
 CONTROLS: dict[ControlKind, tuple[FieldType, frozenset[FilterOp]]] = {
     ControlKind.select: (FieldType.enum, _IN),
     ControlKind.task_status: (FieldType.reference, _IN),
+    ControlKind.task_type: (FieldType.reference, _IN),
     ControlKind.task: (FieldType.reference, _IN),
     ControlKind.member: (FieldType.reference, _IN),
     ControlKind.tag: (FieldType.reference, _IN),
@@ -219,6 +222,12 @@ class FieldSpec:
     #: The values this field accepts, when it accepts a closed set of them.
     #: Read off the column that stores them, so a client needs no copy.
     options: tuple[str, ...] = ()
+    #: Whether its values read highest first: a list grouped by it starts at
+    #: the last of ``options`` (the most urgent priority).
+    descending: bool = False
+    #: Whether what it orders by is a set of groups: a sort expression whose
+    #: values a list is grouped into (a task's date window).
+    buckets: bool = False
 
     @property
     def type(self) -> FieldType:
@@ -390,6 +399,7 @@ def column(
     nullable: bool = True,
     offer: bool = True,
     options: tuple[str, ...] = (),
+    descending: bool = False,
 ) -> FieldSpec:
     """A field that is a column. ``ops`` defaults to what its type supports."""
     return FieldSpec(
@@ -402,6 +412,7 @@ def column(
         nullable=nullable,
         offer=offer,
         options=options,
+        descending=descending,
     )
 
 

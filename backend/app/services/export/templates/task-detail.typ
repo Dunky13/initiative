@@ -1,9 +1,9 @@
 // Detailed task report: one task per page, with description, checklist and
 // comments. All data arrives as ONE json string via sys.inputs (never
 // interpolated into this source) — user text stays data. The template holds
-// NO natural-language content: every field label arrives already localized
-// in the payload's `labels` map (the adapter translates to the export
-// creator's locale), so this file is pure layout.
+// NO natural-language content: every label arrives already localized in the
+// payload (the adapter translates to the export creator's locale), so this
+// file is pure layout.
 #let payload = json(bytes(sys.inputs.at("data", default: "{}")))
 
 // Who exported the file and when: document metadata, not printed on the page.
@@ -13,7 +13,6 @@
   date: if "date" in exported { datetime(..exported.date) } else { auto },
 )
 #let tasks = payload.at("tasks", default: ())
-#let labels = payload.at("labels", default: (:))
 
 #set page(
   paper: "a4",
@@ -181,63 +180,53 @@
 #for (idx, task) in tasks.enumerate() {
   if idx > 0 { pagebreak() }
 
+  // The group the task is listed under, when the list was grouped.
+  let group = task.at("group", default: none)
+  if group != none {
+    text(size: 9pt, fill: luma(110), weight: "medium", group)
+    v(2pt)
+  }
+
   text(size: 16pt, weight: "bold", task.at("title", default: ""))
   v(3pt)
-
-  // Meta line: project · status · priority (non-empty parts only).
-  let meta = (
-    task.at("project", default: ""),
-    task.at("status", default: ""),
-    task.at("priority", default: ""),
-  ).filter(p => p != "")
-  if meta.len() > 0 {
-    text(size: 9pt, fill: luma(110), meta.join(" · "))
+  let project = task.at("project", default: "")
+  if project != "" {
+    text(size: 9pt, fill: luma(110), project)
     v(4pt)
   }
 
-  field(labels.at("due", default: "Due"), task.at("due", default: ""))
-  field(labels.at("start", default: "Start"), task.at("start", default: ""))
-  field(
-    labels.at("assignees", default: "Assignees"),
-    task.at("assignees", default: ()).join(", "),
-  )
-  field(
-    labels.at("tags", default: "Tags"),
-    task.at("tags", default: ()).join(", "),
-  )
-
-  // Description: Markdown parsed server-side into blocks (empty → none).
-  section(labels.at("description", default: "Description"))
-  let desc_blocks = task.at("description_blocks", default: ())
-  if desc_blocks.len() > 0 {
-    render_blocks(desc_blocks)
-  } else [
-    #text(fill: luma(150), style: "italic", labels.at("noDescription", default: ""))
-  ]
-
-  // Checklist (checkboxes from completion state).
-  let steps = task.at("checklist", default: ())
-  if steps.len() > 0 {
-    section(labels.at("checklist", default: "Checklist"))
-    for step in steps [
-      #box(if step.at("done", default: false) [☑] else [☐]) #step.at("text", default: "")
-      #linebreak()
-    ]
-  }
-
-  // Comments as a reply thread: each reply is indented one level under its
-  // parent (depth comes from the payload), so it reads like the on-screen
-  // discussion rather than a flat chronological list.
-  let comments = task.at("comments", default: ())
-  if comments.len() > 0 {
-    section(labels.at("comments", default: "Comments"))
-    for c in comments {
-      pad(left: c.at("depth", default: 0) * 1.4em)[
-        #text(size: 9pt, fill: luma(110))[#strong(c.at("author", default: "")) · #c.at("date", default: "")]
-        #linebreak()
-        #multiline(c.at("content", default: ""))
+  // The task page's parts, in its order: a field as a "Label: value" line,
+  // and the description, checklist and comments as sections.
+  for part in task.at("parts", default: ()) {
+    let kind = part.at("kind", default: "field")
+    if kind == "field" {
+      field(part.at("label", default: ""), part.at("value", default: ""))
+    } else if kind == "description" {
+      section(part.at("label", default: ""))
+      let blocks = part.at("items", default: ())
+      if blocks.len() > 0 {
+        render_blocks(blocks)
+      } else [
+        #text(fill: luma(150), style: "italic", part.at("empty", default: ""))
       ]
-      v(5pt)
+    } else if kind == "checklist" {
+      section(part.at("label", default: ""))
+      for step in part.at("items", default: ()) [
+        #box(if step.at("done", default: false) [☑] else [☐]) #step.at("text", default: "")
+        #linebreak()
+      ]
+    } else if kind == "comments" {
+      // A reply thread: each reply indented one level under its parent
+      // (depth comes from the payload), as the discussion reads on screen.
+      section(part.at("label", default: ""))
+      for c in part.at("items", default: ()) {
+        pad(left: c.at("depth", default: 0) * 1.4em)[
+          #text(size: 9pt, fill: luma(110))[#strong(c.at("author", default: "")) · #c.at("date", default: "")]
+          #linebreak()
+          #multiline(c.at("content", default: ""))
+        ]
+        v(5pt)
+      }
     }
   }
 }

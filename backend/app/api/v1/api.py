@@ -41,7 +41,6 @@ from app.api.v1.tenant_endpoints import (
     imports,
     initiatives,
     marketplace as guild_marketplace,
-    me_ai,
     me_tools,
     galleries,
     me_trash,
@@ -57,6 +56,7 @@ from app.api.v1.tenant_endpoints import (
     storage,
     tags,
     task_statuses,
+    task_types,
     tasks,
     tool_grants,
     tool_layouts,
@@ -279,6 +279,7 @@ guild_router.include_router(tool_lists.router)
 guild_router.include_router(projects.router, **_tool_mount(Tool.project))
 guild_router.include_router(task_statuses.router, tags=["task-statuses"])
 guild_router.include_router(task_statuses.initiative_router, tags=["task-statuses"])
+guild_router.include_router(task_types.router, tags=["task-types"])
 guild_router.include_router(tool_layouts.router, tags=["layouts"])
 guild_router.include_router(query.router, tags=["query"])
 guild_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
@@ -411,7 +412,6 @@ me_router.include_router(me_tools.me_router, tags=["my-tools"])
 me_router.include_router(personal_items.me_router, tags=["personal-items"])
 me_router.include_router(calendar_entries.me_router, tags=["calendar-entries"])
 me_router.include_router(me_trash.me_router, tags=["trash"])
-me_router.include_router(me_ai.me_router, tags=["ai-settings"])
 me_router.include_router(notification_prefs.me_router, tags=["notifications"])
 me_router.include_router(contacts.me_router, tags=["contacts"])
 me_router.include_router(

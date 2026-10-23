@@ -86,7 +86,6 @@ describe("isPersistablePath", () => {
   it("never persists the account's settings, keys or addresses", () => {
     expect(isPersistablePath("/api/v1/me/api-keys")).toBe(false);
     expect(isPersistablePath("/api/v1/me/emails")).toBe(false);
-    expect(isPersistablePath("/api/v1/me/ai")).toBe(false);
     expect(isPersistablePath("/api/v1/me/notification-preferences")).toBe(false);
     expect(isPersistablePath("/api/v1/me/reports")).toBe(false);
   });

@@ -8,14 +8,22 @@ UI surfacing.
 Unauthenticated: the SPA needs this before any user is logged in.
 """
 
+import json
+import secrets
+from string import Template
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.api.deps import SessionDep
 from app.core.cookie_categories import active_cookie_categories
-from app.core.config import settings
+from app.core.config import (
+    CAPACITOR_NATIVE_ORIGINS,
+    captcha_frame_content_security_policy,
+    settings,
+)
 from app.core.security import (
     billing_insights_handoff_enabled,
     billing_support_handoff_enabled,
@@ -67,8 +75,11 @@ class BillingConfig(BaseModel):
     # Whether the billing service's insights page can be opened from here:
     # the operator dashboard's Billing tab shows its button only then.
     insights: bool = False
-    # The same for its contracts console: the same key opens it.
+    # The same for its contracts console, its owner directory and Control:
+    # the same key opens them.
     contracts: bool = False
+    directory: bool = False
+    control: bool = False
 
 
 class AppConfig(BaseModel):
@@ -166,6 +177,8 @@ async def get_app_config(session: SessionDep) -> AppConfig:
             manages_plans=billing_managed(),
             insights=billing_insights_handoff_enabled(),
             contracts=billing_insights_handoff_enabled(),
+            directory=billing_insights_handoff_enabled(),
+            control=billing_insights_handoff_enabled(),
         )
         if settings.BILLING_URL
         else None
@@ -193,4 +206,99 @@ async def get_app_config(session: SessionDep) -> AppConfig:
         ),
         min_native_version=get_min_native_version(),
         min_desktop_version=get_min_desktop_version(),
+    )
+
+
+#: The page the phone and desktop apps frame to show the captcha. Their own
+#: pages are served from the device, which no provider's site key names, so
+#: the widget is drawn here, on this server's own address, and hands its token
+#: up to the app.
+_CAPTCHA_FRAME = Template("""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html, body { margin: 0; background: transparent; }</style>
+</head>
+<body>
+<div id="widget"></div>
+<script type="application/json" id="captcha">$config</script>
+<script nonce="$nonce">
+(function () {
+  var config = JSON.parse(document.getElementById("captcha").textContent);
+  var send = function (message) {
+    message.type = "initiative-captcha";
+    config.parents.forEach(function (origin) {
+      window.parent.postMessage(message, origin);
+    });
+  };
+  var height = 0;
+  // The lowest edge of what the page holds, so the frame shrinks again once
+  // a challenge closes. A provider hides a closed one above the page.
+  var measure = function () {
+    var next = 0;
+    Array.prototype.forEach.call(document.body.children, function (element) {
+      next = Math.max(next, Math.ceil(element.getBoundingClientRect().bottom));
+    });
+    if (next !== height) {
+      height = next;
+      send({ height: height });
+    }
+  };
+  var token = function (value) {
+    send({ token: value });
+  };
+  var render = function () {
+    var api = {
+      hcaptcha: window.hcaptcha,
+      turnstile: window.turnstile,
+      recaptcha: window.grecaptcha
+    }[config.provider];
+    if (!api || typeof api.render !== "function") {
+      window.setTimeout(render, 50);
+      return;
+    }
+    api.render(document.getElementById("widget"), {
+      sitekey: config.siteKey,
+      callback: token,
+      "expired-callback": function () { token(""); },
+      "error-callback": function () { token(""); }
+    });
+    new MutationObserver(measure).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true
+    });
+    measure();
+  };
+  render();
+})();
+</script>
+<script src="$script" async nonce="$nonce"></script>
+</body>
+</html>
+""")
+
+
+@router.get("/config/captcha", include_in_schema=False)
+async def get_captcha_frame() -> HTMLResponse:
+    public_captcha = await captcha_service.public_config()
+    if public_captcha is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    provider, site_key = public_captcha
+    nonce = secrets.token_urlsafe(16)
+    config = json.dumps(
+        {"provider": provider, "siteKey": site_key, "parents": CAPACITOR_NATIVE_ORIGINS}
+    ).replace("<", "\\u003c")
+    page = _CAPTCHA_FRAME.substitute(
+        config=config, nonce=nonce, script=captcha_service.SCRIPT_URLS[provider]
+    )
+    return HTMLResponse(
+        page,
+        headers={
+            "Content-Security-Policy": captcha_frame_content_security_policy(
+                provider, nonce
+            ),
+            "Cache-Control": "no-store",
+        },
     )

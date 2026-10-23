@@ -78,6 +78,7 @@ def _project(**task_overrides) -> dict:
         "tags": [],
         "task_statuses": [{"name": "To Do", "category": "todo", "is_default": True}],
         "property_definitions": [],
+        "layouts": [],
         "tasks": [task, second],
     }
 

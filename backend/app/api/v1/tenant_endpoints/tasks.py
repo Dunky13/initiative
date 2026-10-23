@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.errors import CodedError
 from app.api import resource_access
@@ -24,7 +25,7 @@ from app.api.deps import (
 )
 from app.core import recurrence
 from app.core.audit_events import AuditEventType
-from app.core.messages import ChecklistMessages, TaskMessages
+from app.core.messages import ChecklistMessages, QueryMessages, TaskMessages
 from app.db.query import build_paginated_response, paginated_query
 from app.db.session import routed_guild_id
 from app.models.platform.user import User
@@ -35,7 +36,8 @@ from app.schemas.ai_generation import (
     GenerateChecklistResponse,
     GenerateDescriptionResponse,
 )
-from app.schemas.recurrence import OccurrenceScope
+from app.schemas.query import DateBucket, GroupRead, GroupsResponse
+from app.schemas.recurrence import OccurrenceScope, validate_task_recurrence
 from app.schemas.platform.access_grant import AccessGrantRead
 from app.schemas.tenant.task import (
     ChecklistItem,
@@ -56,6 +58,7 @@ from app.services import ai_generation as ai_generation_service
 from app.services import audit as audit_service
 from app.services import notifications as notifications_service
 from app.services.ai_settings import resolve_ai_settings
+from app.services.fields.grouping import GroupingError, group_rows
 from app.services.tenant import archive as archive_service
 from app.services.tenant import attachments as attachments_service
 from app.services.tenant import column_limits
@@ -71,6 +74,7 @@ from app.services.tenant import task_description as task_description_service
 from app.services.tenant import task_queries
 from app.services.tenant import task_series
 from app.services.tenant import task_statuses as task_statuses_service
+from app.services.tenant import task_types as task_types_service
 from app.services.tenant.soft_delete import trash
 from app.services.tenant.task_completion import sync_completed_at
 
@@ -165,6 +169,21 @@ def _touch_project(project: Project, now: datetime) -> None:
 #: ``tasks`` policy is rendered from, so the routes and the policy cannot
 #: disagree about a task's parent.
 _GOVERNING = resource_access.governing_tool("tasks")
+
+
+async def _writable_series(
+    session: AsyncSession,
+    task: Task,
+    current_user: Optional[User],
+    context: ActorContext,
+) -> list[Task]:
+    """Every other task of the task's series, once the caller may change each."""
+    series = await task_series.others(session, task)
+    for project in {member.project_id: member.project for member in series}.values():
+        resource_access.authorize(
+            _GOVERNING, project, current_user, context=context, access="write"
+        )
+    return series
 
 
 async def _response(session: SessionDep, task_id: int) -> Task:
@@ -307,11 +326,24 @@ async def create_task(
         exclude={
             "assignee_ids",
             "task_status_id",
+            "task_type_id",
             "tag_ids",
             "properties",
             "checklist",
             "tz",
         }
+    )
+    # What the task's type starts a task with, where it was left empty.
+    task_type = await task_creation_service.resolve_type_row(
+        session, project_id=project.id, task_type_id=task_in.task_type_id
+    )
+    starting_lines = task_creation_service.start_from_type(
+        task_type, task_data, sent=task_in.model_fields_set
+    )
+    checklist = (
+        checklist_service.normalize(task_in.checklist)
+        if "checklist" in task_in.model_fields_set
+        else task_creation_service.starting_checklist(starting_lines)
     )
     if task_data.get("recurrence"):
         task_data["recurrence"], task_data["recurrence_shift"] = recurrence.stored(
@@ -326,9 +358,10 @@ async def create_task(
         session,
         project=project,
         task_status_id=task_in.task_status_id,
+        task_type_id=task_type.id,
         **task_data,
         created_by=guild_context.user_id,
-        checklist=checklist_service.normalize(task_in.checklist),
+        checklist=checklist,
     )
     await column_limits.refuse_full_columns(session, guild_context, project.id, [task])
     await task_creation_service.set_task_assignees(
@@ -375,6 +408,53 @@ async def create_task(
     await properties_service.write_on_create(session, task, task_in.properties)
     await session.commit()
     return await _response(session, task.id)
+
+
+@router.get("/groups", response_model=GroupsResponse)
+async def list_task_groups(
+    session: ActorSessionDep,
+    current_user: ActorUserDep,
+    guild_context: ProjectsRead,
+    group_by: str = Query(
+        max_length=64,
+        description=(
+            "The field the list is grouped by, as the field catalog's "
+            "``groupings`` name it, or ``property:<id>``"
+        ),
+    ),
+    bucket: Optional[DateBucket] = Query(
+        default=None, description="For a date: the bucket of the calendar it groups by"
+    ),
+    conditions: Optional[str] = Query(default=None),
+    include_archived: bool = Query(default=False),
+    tz: Optional[str] = Query(default=None),
+) -> GroupsResponse:
+    """The groups of the task list these filters answer with, in the order the
+    list shows them, and the groups each task is in."""
+    q = await task_queries.parse_task_list_query(session, conditions, None, tz)
+    if current_user is None:
+        task_queries.refuse_person_filters(q)
+    build = await task_queries.guild_task_query_builder(
+        session, current_user, guild_context, q=q, include_archived=include_archived
+    )
+    ids = list(await session.exec(build(select(Task.id)))) if build else []
+    try:
+        grouping = await group_rows(
+            session, "tasks", group_by, ids, bucket=bucket, tz=q.tz
+        )
+    except GroupingError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=QueryMessages.INVALID_GROUPING,
+        )
+    return GroupsResponse(
+        groups=[GroupRead(key=g.key, label=g.label) for g in grouping.listed()],
+        rows={
+            row_id: [group.key for group in held]
+            for row_id, held in grouping.groups.items()
+            if held
+        },
+    )
 
 
 @router.get("/column-limits", response_model=List[ColumnFillRead])
@@ -527,6 +607,19 @@ async def update_task(
     project = task.project
 
     update_data = task_in.model_dump(exclude_unset=True)
+    if update_data.get("recurrence", task.recurrence) is None:
+        update_data.setdefault("recurrence_limit", None)
+    try:
+        validate_task_recurrence(
+            rule=update_data.get("recurrence", task.recurrence),
+            strategy=update_data.get("recurrence_strategy") or task.recurrence_strategy,
+            limit=update_data.get("recurrence_limit", task.recurrence_limit),
+            due=update_data.get("due_date", task.due_date),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=TaskMessages.INVALID_RECURRENCE_LIMIT
+        ) from exc
     if "description_base" in update_data:
         await overwrites.refuse_written_over(
             session, task, "description", update_data.pop("description_base")
@@ -556,10 +649,16 @@ async def update_task(
         else None
     )
     previous_start = task.due_date or task.start_date
+    previous_repeat = (task.recurrence, task.recurrence_shift, task.recurrence_strategy)
     previous_description = task.description
     previous_status_category = task.task_status.category if task.task_status else None
     new_status_id = update_data.pop("task_status_id", None)
     status_category = update_data.pop("status_category", None)
+    new_type_id = update_data.pop("task_type_id", None)
+    if new_type_id is not None and new_type_id != task.task_type_id:
+        task.task_type_id = await task_creation_service.resolve_type(
+            session, project_id=task.project_id, task_type_id=new_type_id
+        )
 
     if (
         new_status_id is None
@@ -595,57 +694,54 @@ async def update_task(
         )
 
     for field, value in update_data.items():
-        if field == "recurrence":
-            if value is None:
-                task.recurrence_occurrence_count = 0
-                setattr(task, field, None)
-                task.recurrence_strategy = "fixed"
-                continue
-        if field == "recurrence_strategy" and value is None:
+        if field == "recurrence" or (field == "recurrence_strategy" and value is None):
             continue
         setattr(task, field, value)
-    start = task.due_date or task.start_date
-    if update_data.get("recurrence"):
-        task.recurrence, task.recurrence_shift = recurrence.stored(
-            update_data["recurrence"], start, picked_in, kind="task"
-        )
-    elif (
-        task.recurrence
-        and previous_start
-        and start
-        and start != previous_start
-        and scope != "this"
-    ):
-        # The repeat moves with its start, its days kept as they were picked.
-        task.recurrence, task.recurrence_shift = recurrence.restarted(
-            task.recurrence, task.recurrence_shift, previous_start, start, picked_in
-        )
+    task_series.repeat_edited(
+        task,
+        update_data.get("recurrence", ...),
+        previous_start=previous_start,
+        tz=picked_in,
+        scope=scope,
+    )
+    if {"recurrence", "recurrence_limit", "due_date"}.intersection(update_data):
+        try:
+            await task_series.reschedule_hourly(
+                session,
+                task,
+                user_timezone=current_user.timezone
+                if current_user is not None
+                else None,
+                due_sent="due_date" in update_data,
+                rule_changed=bool(
+                    {"recurrence", "recurrence_limit"}.intersection(update_data)
+                ),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=TaskMessages.INVALID_RECURRENCE_LIMIT
+            ) from exc
     if checklist_sent:
         task.checklist = checklist_service.normalize(
             task_in.checklist or [], existing=task.checklist
         )
     series: list[Task] = []
     if before is not None:
-        after = task_series.values_after(
-            task, before, assignee_ids=assignee_ids, tag_ids=tag_ids
+        after, moved = task_series.edited(
+            task, before, scope=scope, assignee_ids=assignee_ids, tag_ids=tag_ids
         )
-        moved = task_series.changed(before, after)
-        if scope == "this" and task.recurrence:
-            task_series.keep(task, before, after)
-        else:
-            task_series.release(task, moved)
+    start = task.due_date or task.start_date
+    if previous_repeat != (
+        task.recurrence,
+        task.recurrence_shift,
+        task.recurrence_strategy,
+    ) or (start != previous_start and scope != "this"):
+        task.recurrence_anchor, task.recurrence_anchor_count = (
+            task_series.anchor_from_dates(task)
+        )
+    if before is not None:
         if scope == "all":
-            series = await task_series.others(session, task)
-            for project in {
-                member.project_id: member.project for member in series
-            }.values():
-                resource_access.authorize(
-                    _GOVERNING,
-                    project,
-                    current_user,
-                    context=guild_context,
-                    access="write",
-                )
+            series = await _writable_series(session, task, current_user, guild_context)
     now = datetime.now(timezone.utc)
     task.updated_at = now
     sync_completed_at(
@@ -713,7 +809,7 @@ async def update_task(
         )
     # Once the task has everything this edit gives it, so a completion's next
     # task is copied from what was saved.
-    await task_creation_service.advance_recurrence_if_needed(
+    await task_series.advance_recurrence_if_needed(
         session,
         task,
         previous_status_category=previous_status_category,
@@ -785,6 +881,9 @@ async def move_task(
     now = datetime.now(timezone.utc)
     source_project = task.project
     task.project_id = target_project.id
+    task.task_type_id = await task_types_service.type_for_move(
+        session, task.task_type_id, target_project.id
+    )
     task.task_status_id = default_status.id  # ty: ignore[invalid-assignment] — persisted row, id is set
     task.task_status = default_status
     task.position = 0
@@ -875,15 +974,11 @@ async def delete_task(
         )
     )
     if not skipped:
-        series = await task_series.others(session, task) if scope == "all" else []
-        for member in series:
-            resource_access.authorize(
-                _GOVERNING,
-                member.project,
-                current_user,
-                context=guild_context,
-                access="write",
-            )
+        series = (
+            await _writable_series(session, task, current_user, guild_context)
+            if scope == "all"
+            else []
+        )
         for doomed in [task, *series]:
             await trash(session, doomed, deleted_by_user_id=current_user.id)
     _touch_project(project, now)
@@ -996,7 +1091,7 @@ async def reorder_tasks(
             task, task.task_status.category if task.task_status else None, now=now
         )
         session.add(task)
-        await task_creation_service.advance_recurrence_if_needed(
+        await task_series.advance_recurrence_if_needed(
             session,
             task,
             previous_status_category=previous_status_category,
@@ -1120,7 +1215,7 @@ async def _record_ai_request(
     Committed before the request goes out, since the disclosure does not wait
     on the reply. A configuration that sends nothing records nothing.
     """
-    resolved = await resolve_ai_settings(session, user, guild_id)
+    resolved = await resolve_ai_settings(session, guild_id)
     if not resolved.enabled or resolved.provider is None:
         return
     await audit_service.record(
@@ -1162,15 +1257,14 @@ async def generate_task_checklist(
         initiative_id=project.initiative_id,
     )
 
-    items = await ai_generation_service.generate_checklist(
-        session,
-        current_user,
-        guild_context.guild_id,
-        task,
-        initiative_name=project.initiative.name if project.initiative else None,
-        project_name=project.name,
+    items, context = await ai_generation_service.generate_checklist(
+        session, current_user, guild_context.guild_id, task
     )
-    return GenerateChecklistResponse(items=items)
+    return GenerateChecklistResponse(
+        items=items,
+        comments_read=context.comments_read,
+        comments_total=context.comments_total,
+    )
 
 
 @router.post("/{task_id}/ai/description", response_model=GenerateDescriptionResponse)
@@ -1193,12 +1287,11 @@ async def generate_task_description(
         initiative_id=project.initiative_id,
     )
 
-    description = await ai_generation_service.generate_description(
-        session,
-        current_user,
-        guild_context.guild_id,
-        task,
-        initiative_name=project.initiative.name if project.initiative else None,
-        project_name=project.name,
+    description, context = await ai_generation_service.generate_description(
+        session, current_user, guild_context.guild_id, task
     )
-    return GenerateDescriptionResponse(description=description)
+    return GenerateDescriptionResponse(
+        description=description,
+        comments_read=context.comments_read,
+        comments_total=context.comments_total,
+    )

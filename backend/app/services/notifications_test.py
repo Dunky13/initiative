@@ -8,6 +8,7 @@ test harness commits real data and truncates between tests).
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from types import SimpleNamespace
+from typing import Literal
 from unittest.mock import AsyncMock
 from urllib.parse import urlencode
 
@@ -16,6 +17,7 @@ import re
 from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.services.tenant.task_types import get_default_type
 from app.core import usernames
 from app.db.session import set_rls_context
 from app.models.tenant.calendar_event import (
@@ -57,7 +59,7 @@ from app.services.notifications import (
 from app.services.guild_sweeps import Scan, Scope, each_guild
 from app.services.platform import accounts as accounts_service
 from app.services.tenant import expiry
-from app.models.platform.guild import Guild, CommunityRole
+from app.models.platform.guild import CommunityRole, CommunityStatus, Guild
 from app.testing import (
     guild_of,
     create_calendar,
@@ -68,10 +70,12 @@ from app.testing import (
     create_initiative,
     create_initiative_member,
     create_project,
+    create_resource_grant,
     create_task,
     create_user,
     drain_notices,
     set_notification_prefs,
+    strip_non_owner_grants,
 )
 from app.testing import route_as, route_session_to_guild
 from app.db.request_context import Platform, SystemGuild, Unattributed
@@ -100,7 +104,9 @@ async def _events_initiative(session: AsyncSession, creator):
     return guild, initiative, calendar
 
 
-async def _add_attendee(session, initiative, event, user, *, rsvp=RSVPStatus.pending):
+async def _add_attendee(
+    session, initiative, event, user, *, rsvp=RSVPStatus.pending, in_initiative=True
+):
     session.add(CalendarEventAttendee(calendar_event_id=event.id, user_id=user.id))
     if rsvp is not RSVPStatus.pending:
         session.add(
@@ -116,7 +122,8 @@ async def _add_attendee(session, initiative, event, user, *, rsvp=RSVPStatus.pen
     await create_guild_membership(
         session, user=user, guild=guild, role=CommunityRole.member
     )
-    await create_initiative_member(session, initiative, user, role_name="member")
+    if in_initiative:
+        await create_initiative_member(session, initiative, user, role_name="member")
 
 
 async def _reminders_for(session: AsyncSession, user_id: int) -> list[Notification]:
@@ -380,6 +387,32 @@ async def test_event_reminder_at_time_of_event_fires_at_start(session: AsyncSess
     assert len(await _reminders_for(session, attendee.id)) == 1
 
 
+async def test_event_reminder_reaches_only_attendees_who_reach_the_event(
+    session: AsyncSession,
+):
+    """An attendee still on an event in an initiative they are not in is not
+    reminded of it; one in the initiative is."""
+    creator = await create_user(session)
+    inside, outside = [
+        await create_user(session, event_reminder_minutes_before=15) for _ in range(2)
+    ]
+    _guild, initiative, calendar = await _events_initiative(session, creator)
+    start_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    event = await create_calendar_event(
+        session,
+        calendar,
+        creator,
+        start_at=start_at,
+        end_at=start_at + timedelta(minutes=30),
+    )
+    await _add_attendee(session, initiative, event, inside)
+    await _add_attendee(session, initiative, event, outside, in_initiative=False)
+
+    await _dispatch(session)
+    assert len(await _reminders_for(session, inside.id)) == 1
+    assert await _reminders_for(session, outside.id) == []
+
+
 async def test_event_reminder_skips_declined_attendees(session: AsyncSession):
     creator = await create_user(session, email="organizer4@example.com")
     attendee = await create_user(
@@ -440,30 +473,42 @@ async def test_a_community_notice_carries_its_guild(
     assert f"community_id={guild.id}" in data["smart_link"]
 
 
-async def _overdue_task_in_new_guild(
+async def _project_in_new_guild(
     session: AsyncSession,
     user: User,
     *,
     label: str,
-    is_template: bool = False,
-    project_archived: bool = False,
-    task_archived: bool = False,
+    access: Literal["admin", "read", "outside"] = "admin",
+    **project_fields,
 ):
-    """Give ``user`` an overdue task assigned to them in a brand-new guild, so a
-    user in several guilds has overdue work spread across guild schemas."""
-    guild = await create_guild(session, creator=user)
+    """A project in a brand-new guild, reached by ``user`` as ``access`` says,
+    with its default status, and who assigns its work.
+
+    ``admin``: ``user`` made the guild. ``read``: somebody else made it, and
+    ``user`` is an initiative member the project is shared with to read.
+    ``outside``: somebody else made it, and ``user`` is a member of the guild
+    but not of the initiative.
+    """
+    # A prior call left the session in a guild-member context; reset so the new
+    # guild INSERT into public.guilds isn't RLS-denied.
+    await set_rls_context(session, Unattributed())
+    owner = user if access == "admin" else await create_user(session)
+    guild = await create_guild(session, creator=owner)
     await create_guild_membership(
-        session, user=user, guild=guild, role=CommunityRole.admin
-    )
-    initiative = await create_initiative(session, guild, user, name=label)
-    project = await create_project(
         session,
-        initiative,
-        user,
-        name=f"{label} Project",
-        is_template=is_template,
-        archived_at=datetime.now(timezone.utc) if project_archived else None,
+        user=user,
+        guild=guild,
+        role=CommunityRole.admin if access == "admin" else CommunityRole.member,
     )
+    initiative = await create_initiative(session, guild, owner, name=label)
+    if access == "read":
+        await create_initiative_member(session, initiative, user)
+    project = await create_project(
+        session, initiative, owner, name=f"{label} Project", **project_fields
+    )
+    if access == "read":
+        await strip_non_owner_grants(session, project, owner.id)
+        await create_resource_grant(session, project, user=user)
     status = TaskStatus(
         project_id=project.id,
         name="Todo",
@@ -474,9 +519,33 @@ async def _overdue_task_in_new_guild(
     session.add(status)
     await session.commit()
     await session.refresh(status)
+    return guild, project, status, owner
+
+
+async def _overdue_task_in_new_guild(
+    session: AsyncSession,
+    user: User,
+    *,
+    label: str,
+    access: Literal["admin", "read", "outside"] = "admin",
+    is_template: bool = False,
+    project_archived: bool = False,
+    task_archived: bool = False,
+):
+    """Give ``user`` an overdue task assigned to them in a brand-new guild, so a
+    user in several guilds has overdue work spread across guild schemas."""
+    guild, project, status, _assigner = await _project_in_new_guild(
+        session,
+        user,
+        label=label,
+        access=access,
+        is_template=is_template,
+        archived_at=datetime.now(timezone.utc) if project_archived else None,
+    )
     task = Task(
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         title=f"{label} overdue",
         priority=TaskPriority.medium,
         due_date=datetime.now(timezone.utc) - timedelta(days=1),
@@ -756,40 +825,54 @@ async def test_overdue_digest_skips_archived_projects_and_tasks(
     assert "ArchivedTask overdue" not in (push.push_body or "")
 
 
+async def test_overdue_digest_holds_only_what_its_reader_reaches(
+    session: AsyncSession, monkeypatch
+):
+    """A task stays assigned to somebody outside its initiative, and their
+    digest is read as them: it names the task they can open and not that one."""
+    user = await create_user(session, timezone="UTC")
+    await set_notification_prefs(session, user, {"email": {"at": "00:00"}})
+    await _overdue_task_in_new_guild(session, user, label="Reached")
+    await _overdue_task_in_new_guild(session, user, label="Elsewhere", access="outside")
+
+    captured: dict = {}
+
+    async def _capture_email(sess, recipient, **kwargs):
+        captured["titles"] = _titles(kwargs["pieces"].body)
+        return True
+
+    monkeypatch.setattr(email_outbox, "enqueue", _capture_email)
+
+    await set_rls_context(session, Unattributed())
+    await _sweep(overdue_scan(now=datetime.now(timezone.utc)))
+
+    assert "Reached overdue" in captured["titles"]
+    assert "Elsewhere overdue" not in captured["titles"]
+
+
 async def _assignment_item_in_new_guild(
-    session: AsyncSession, user: User, *, label: str
+    session: AsyncSession,
+    user: User,
+    *,
+    label: str,
+    access: Literal["admin", "read", "outside"] = "admin",
 ):
     """Queue a task-assignment digest item for ``user`` in a brand-new guild."""
-    # A prior call left the session in a guild-member context; reset so the new
-    # guild INSERT into public.guilds isn't RLS-denied.
-    await set_rls_context(session, Unattributed())
-    guild = await create_guild(session, creator=user)
-    await create_guild_membership(
-        session, user=user, guild=guild, role=CommunityRole.admin
+    guild, project, status, assigner = await _project_in_new_guild(
+        session, user, label=label, access=access
     )
-    initiative = await create_initiative(session, guild, user, name=label)
-    project = await create_project(session, initiative, user, name=f"{label} Project")
-    status = TaskStatus(
-        project_id=project.id,
-        name="Todo",
-        category=TaskStatusCategory.todo,
-        position=0,
-        is_default=True,
-    )
-    session.add(status)
-    await session.commit()
-    await session.refresh(status)
     task = Task(
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         title=f"{label} task",
         priority=TaskPriority.medium,
     )
     session.add(task)
     await session.commit()
     await session.refresh(task)
-    # digest items have no guild_id column, so route by search_path before insert.
-    await route_as(session, user_id=user.id, guild_id=guild.id)
+    # Queued by whoever assigned it, as the assignment itself is.
+    await route_as(session, user_id=assigner.id, guild_id=guild.id)
     session.add(
         TaskAssignmentDigestItem(
             user_id=user.id,
@@ -847,6 +930,93 @@ async def test_assignment_digest_gathers_items_across_user_guilds(
             )
         ).all()
         assert pending == [], f"guild {guild_id} items not marked processed"
+
+
+async def test_assignment_digest_takes_only_what_its_reader_reaches(
+    session: AsyncSession, monkeypatch
+):
+    """The digest is taken as its reader: a line about a project shared with
+    them to read is sent and marked, and one about a project they cannot reach
+    is neither."""
+    user = await create_user(session)
+    shared = await _assignment_item_in_new_guild(
+        session, user, label="Shared", access="read"
+    )
+    elsewhere = await _assignment_item_in_new_guild(
+        session, user, label="Elsewhere", access="outside"
+    )
+
+    captured: dict = {}
+
+    async def _capture_email(sess, recipient, **kwargs):
+        captured["titles"] = _titles(kwargs["pieces"].body)
+        return True
+
+    monkeypatch.setattr(email_outbox, "enqueue", _capture_email)
+
+    await set_rls_context(session, Unattributed())
+    await _sweep(
+        digest_scan(
+            ASSIGNMENT_DIGEST, now=datetime.now(timezone.utc) + ASSIGNMENT_QUIET_PERIOD
+        )
+    )
+
+    assert "Shared task" in captured["titles"]
+    assert "Elsewhere task" not in captured["titles"]
+    for guild, unsent in ((shared, 0), (elsewhere, 1)):
+        await route_session_to_guild(session, guild.id)
+        pending = (
+            await session.exec(
+                select(TaskAssignmentDigestItem).where(
+                    TaskAssignmentDigestItem.processed_at.is_(None)
+                )
+            )
+        ).all()
+        assert len(pending) == unsent
+
+
+async def test_assignment_digest_leaves_a_community_on_hold_waiting(
+    session: AsyncSession, monkeypatch
+):
+    """Items in a community whose content is on hold wait for the hold to lift;
+    every digest due in the same pass still goes out, its own reader's
+    included."""
+    first, second = await create_user(session), await create_user(session)
+    held = await _assignment_item_in_new_guild(session, second, label="Held")
+    await _assignment_item_in_new_guild(session, second, label="Open")
+    await _assignment_item_in_new_guild(session, first, label="First")
+    await set_rls_context(session, Unattributed())
+    await session.exec(
+        update(Guild)
+        .where(Guild.id == held.id)
+        .values(
+            status=CommunityStatus.read_only.value,
+            status_changed_at=datetime.now(timezone.utc),
+        )
+    )
+    await session.commit()
+
+    sent: dict[int, set[str]] = {}
+
+    async def _capture_email(sess, recipient, **kwargs):
+        sent[recipient.id] = _titles(kwargs["pieces"].body)
+        return True
+
+    monkeypatch.setattr(email_outbox, "enqueue", _capture_email)
+
+    await _sweep(
+        digest_scan(
+            ASSIGNMENT_DIGEST, now=datetime.now(timezone.utc) + ASSIGNMENT_QUIET_PERIOD
+        )
+    )
+
+    assert "First task" in sent[first.id]
+    assert "Open task" in sent[second.id] and "Held task" not in sent[second.id]
+    await route_session_to_guild(session, held.id)
+    assert len((await session.exec(select(TaskAssignmentDigestItem))).all()) == 1
+    assert (
+        await session.exec(select(TaskAssignmentDigestItem.processed_at))
+    ).one() is None
 
 
 async def test_assignment_digest_takes_an_opted_out_community_unsent(

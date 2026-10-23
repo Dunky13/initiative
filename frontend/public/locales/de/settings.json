@@ -6,7 +6,6 @@
       "account": "Konto",
       "interface": "Präferenzen",
       "notifications": "Benachrichtigungen",
-      "ai": "KI",
       "security": "Sicherheit",
       "trash": "Papierkorb",
       "privacy": "Privatsphäre"
@@ -210,11 +209,16 @@
   },
   "communityAI": {
     "title": "Community-KI",
-    "adminOnly": "Nur Community-Admins können KI-Verbindungen verwalten. Um deinen eigenen Schlüssel festzulegen, öffne „KI“ in deinen Profileinstellungen.",
+    "adminOnly": "Nur Community-Admins können KI-Verbindungen verwalten.",
     "connectionsTitle": "Community-Verbindungen",
     "connectionsDescription": "Definiere die KI-Verbindungen, die Mitglieder dieser Community verwenden können.",
     "disabledDescription": "KI-Funktionen sind für die Plattform deaktiviert.",
-    "managedByPlatform": "KI-Verbindungen werden auf Plattformebene verwaltet. Mitglieder legen ihren eigenen Schlüssel in ihren Profileinstellungen fest."
+    "managedByPlatform": "KI-Verbindungen werden auf Plattformebene verwaltet. Mitglieder legen ihren eigenen Schlüssel in ihren Profileinstellungen fest.",
+    "switchTitle": "KI in dieser Community",
+    "switchLabel": "KI-Funktionen erlauben",
+    "switchHelp": "Ausgeschaltet wird nichts aus dieser Community an einen KI-Anbieter gesendet, egal welche Verbindung der Server oder die Community einrichtet.",
+    "switchSaved": "KI-Einstellung gespeichert",
+    "switchError": "Die KI-Einstellung konnte nicht gespeichert werden."
   },
   "platformAI": {
     "title": "Plattform-KI",
@@ -336,6 +340,12 @@
     "desktopAutoUpdate": {
       "label": "App automatisch aktualisieren",
       "description": "Wenn dein Server eine neuere Desktop-App braucht, wird sie heruntergeladen und beim Neustart installiert."
+    },
+    "addingTitle": "Wenn du eine Aufgabe hinzufügst",
+    "addingDescription": "Wie eine neue Aufgabe ausgefüllt wird.",
+    "smartTaskTitles": {
+      "label": "Details aus dem Titel lesen",
+      "description": "Schreib „Freitag um 15 Uhr“, „jede Woche“, „!hoch“, „#tag“ oder „@name“ in den Titel einer neuen Aufgabe, um Fälligkeit, Wiederholung, Priorität, Tags und Zuständige zu setzen. Was gelesen wird, ist hervorgehoben; nimm es weg, um die Wörter so zu lassen."
     },
     "completionTitle": "Wenn du eine Aufgabe abschließt",
     "completionDescription": "Was die App tut, sobald eine Aufgabe abgehakt ist. Probier jede Variante aus, bevor du sie behältst.",
@@ -1751,13 +1761,17 @@
     "labelPlaceholder": "z. B. Team OpenAI",
     "apiKeyPlaceholderExisting": "••••••••",
     "apiKeyPlaceholderNew": "API-Schlüssel eingeben",
-    "apiKeyHelpExisting": "Leer lassen, um den vorhandenen Schlüssel beizubehalten.",
+    "apiKeyHelpExisting": "Leer lassen, um den vorhandenen Schlüssel beizubehalten. Beim Wechsel des Anbieters oder der Adresse wird er entfernt.",
     "apiKeyHelpNew": "Der gemeinsame Schlüssel, den alle Mitglieder für diese Verbindung verwenden.",
     "modelPlaceholder": "Modell auswählen oder eingeben",
     "modelSearchPlaceholder": "Modellnamen suchen oder eingeben…",
     "modelsLoading": "Modelle werden abgefragt…",
     "modelsEmpty": "Keine Modellvorschläge — Name eingeben",
     "modelUseTyped": "„{{value}}“ verwenden",
+    "modelHintNew": "Speichere, um aus den Modellen des Anbieters zu wählen, oder gib den Namen eines Modells ein.",
+    "modelHintPick": "Wähle ein Modell, um diese Verbindung fertig einzurichten.",
+    "needsModel": "Braucht ein Modell",
+    "customHint": "Jeder Server, der die OpenAI-API spricht: vLLM, llama.cpp, LM Studio, LocalAI oder ein Gateway wie LiteLLM. Gib die Adresse bis einschließlich /v1 an.",
     "enabledLabel": "Aktiviert",
     "enabledDescription": "Mitgliedern erlauben, diese Verbindung zu verwenden.",
     "defaultLabel": "Standardverbindung",
@@ -1765,30 +1779,16 @@
     "save": "Verbindung speichern",
     "saving": "Wird gespeichert…",
     "cancel": "Abbrechen",
-    "allowMemberKeysLabel": "Mitgliedern erlauben, ihren eigenen API-Schlüssel zu verwenden",
-    "allowMemberKeysDescription": "Mitglieder können dieser Verbindung einen persönlichen API-Schlüssel hinzufügen."
-  },
-  "memberAI": {
-    "description": "Sieh alle KI-Verbindungen, die dir in deinen Communitys zur Verfügung stehen. Füge dort, wo es erlaubt ist, deinen eigenen API-Schlüssel hinzu und wähle die Verbindung, die du verwendest.",
-    "noneAvailable": "Dir sind noch keine KI-Verbindungen verfügbar.",
-    "sharedKeyCommunity": "Verwendet einen gemeinsamen Schlüssel, den die Community-Administration festgelegt hat.",
-    "sharedKeyPlatform": "Verwendet einen gemeinsamen Schlüssel, den die Person festgelegt hat, die diesen Server betreibt.",
-    "selected": "In Verwendung",
-    "requiresKey": "Benötigt deinen Schlüssel",
-    "keySet": "Dein Schlüssel ist gesetzt",
-    "addKey": "Schlüssel hinzufügen",
-    "replaceKey": "Schlüssel ersetzen",
-    "removeKey": "Schlüssel entfernen",
-    "keyPlaceholder": "Deinen API-Schlüssel eingeben",
-    "saveKey": "Schlüssel speichern",
-    "keySaved": "API-Schlüssel gespeichert",
-    "keyRemoved": "API-Schlüssel entfernt",
-    "keyError": "API-Schlüssel konnte nicht gespeichert werden",
-    "keyRemoveError": "API-Schlüssel konnte nicht entfernt werden",
-    "prefSaved": "Einstellung aktualisiert",
-    "prefError": "Einstellung konnte nicht aktualisiert werden",
-    "test": "Testen",
-    "testSuccess": "Verbindung erfolgreich"
+    "communitiesLabel": "Communities",
+    "communitiesPlaceholder": "Einer Community zuweisen…",
+    "communitiesSearch": "Communities suchen…",
+    "communitiesEmpty": "Keine Community mit diesem Namen",
+    "communitiesHelpNone": "Sie bedient jede Community, der keine andere Verbindung zugewiesen ist.",
+    "communitiesHelpGiven": "Sie bedient nur diese Communities. Eine hier zugewiesene Community verlässt jede andere Verbindung, der sie zugewiesen war.",
+    "removeCommunity": "{{name}} entfernen",
+    "goneCommunity": "Gelöschte Community #{{id}}",
+    "servesOnly": "Nur für {{communities}}",
+    "failingSince": "Fehlerhaft seit {{since}}: {{error}}"
   },
   "community": {
     "title": "Community-Verzeichnis",
@@ -2126,5 +2126,23 @@
     "noCommunity": "Sie öffnet keine Community und braucht keine Zugriffsfreigabe. Eine Community kommt über ihre eigene Abrechnungs-Operator-Konsole auf einen Vertrag.",
     "open": "Verträge öffnen",
     "openError": "Die Vertragskonsole konnte nicht geöffnet werden."
+  },
+  "billingDirectory": {
+    "title": "Verzeichnis",
+    "description": "Jedes zahlende Konto in einer Liste: die Paddle-Kunden und die Verträge.",
+    "lists": "Die Communities jedes Kontos, ihre Pläne und ihr Status, die nächste Abbuchung oder fällige Rechnung, der Schlüssel einer eigenen Bereitstellung und was der Abgleich gefunden hat.",
+    "readOnly": "Nur zum Lesen. Handeln Sie über die Abrechnungskonsolen der Community, mit deren eigenen Zugriffsfreigaben.",
+    "ownersOnly": "Nur für Eigentümer: Es nennt alle zahlenden Kunden auf einmal.",
+    "open": "Verzeichnis öffnen",
+    "openError": "Das Verzeichnis konnte nicht geöffnet werden."
+  },
+  "billingControl": {
+    "title": "Control",
+    "description": "Hier werden die Tarife dieses Servers festgelegt: was jeder Tarif erlaubt, seine Texte in jeder Sprache und die Preise, zu denen er verkauft wird.",
+    "revisions": "Jede Änderung wird als neue Revision des Katalogs gespeichert, mit der Person, die sie vorgenommen hat.",
+    "ownersOnly": "Nur für Eigentümer: Es ändert, was jeder Community verkauft und erlaubt wird.",
+    "noCommunity": "Es öffnet keine Community und braucht keine Zugriffsfreigabe.",
+    "open": "Control öffnen",
+    "openError": "Control konnte nicht geöffnet werden."
   }
 }

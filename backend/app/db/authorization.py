@@ -394,15 +394,17 @@ $function$
 # query execution that first calls it, and inside another function every call
 # is one. A plpgsql function keeps its plan for the session.
 
-#: Trusted system maintenance, admitted by the connection's own login rather
-#: than by anything a statement can write. A sweep assumes a community's role
-#: for its schema, which drops the login's bypass, and this is what says the
-#: login was the system engine's. ``session_user`` is the connection's, not the
-#: assumed role's; the sub-select names no row variable, so the planner
-#: evaluates it once per statement.
+#: Trusted system maintenance: work on the system engine's login with nobody
+#: routed. A sweep assumes a community's role for its schema, which drops the
+#: login's bypass, and this is what says the login was the system engine's.
+#: ``session_user`` is the connection's, not the assumed role's. Somebody routed
+#: on that login, a person or an install, is read as themselves, so which pool a
+#: job draws from never decides what it may read. The sub-select names no row
+#: variable, so the planner evaluates it once per statement.
 SYSTEM_SESSION = (
-    "EXISTS (SELECT 1 FROM pg_roles r"
+    "(EXISTS (SELECT 1 FROM pg_roles r"
     " WHERE r.rolname = session_user AND r.rolbypassrls)"
+    f" AND {gucs.USER_ID.text} IS NULL AND {gucs.INSTALL_ID.text} IS NULL)"
 )
 
 #: The community this session reads: a member routes with

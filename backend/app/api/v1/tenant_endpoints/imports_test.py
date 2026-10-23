@@ -992,7 +992,7 @@ async def _apply_backup(client, actor, zip_bytes, monkeypatch, role_session) -> 
 
 
 async def _run_import_worker(monkeypatch, role_session):
-    user_session = await role_session("app_user")
+    user_session = await role_session("app_admin")
     monkeypatch.setattr(
         import_worker, "_open_user_session", lambda _guild_id: user_session
     )
@@ -2017,6 +2017,7 @@ async def test_envelope_link_out_of_the_file_is_counted(client, acting_user, ses
             {"name": "To Do", "category": "todo", "position": 0, "is_default": True}
         ],
         "property_definitions": [],
+        "layouts": [],
         "tasks": [
             {
                 "title": "Fit the door",
@@ -2315,6 +2316,7 @@ def _project_envelope_with_comment(author_handle: str, author_name: str) -> dict
             {"name": "To Do", "category": "todo", "position": 0, "is_default": True}
         ],
         "property_definitions": [],
+        "layouts": [],
         "tasks": [
             {
                 "title": "Fit the door",
@@ -3413,6 +3415,7 @@ async def _restored(session, initiative_id: int) -> dict:
     return {
         "project": project,
         "tasks": tasks,
+        "layouts": [],
         "files": files,
         "counter": counter,
         "post": (
@@ -4997,7 +5000,9 @@ async def test_a_property_unticked_on_the_review_is_not_created(
         ).all()
     }
     assert "Priority" not in names
-    assert {"Issue type", "Jira key"} <= names
+    assert "Jira key" in names
+    # The issue type is the task's own type rather than a property.
+    assert "Issue type" not in names
 
     task = (await session.exec(select(Task).where(Task.title == "Fit the frame"))).one()
     values = (
@@ -5012,10 +5017,11 @@ async def test_a_property_unticked_on_the_review_is_not_created(
             )
         )
     ).all()
-    assert {definition.name for _value, definition in values} == {
-        "Issue type",
-        "Jira key",
-    }
+    assert {definition.name for _value, definition in values} == {"Jira key"}
+    from app.models.tenant.task import TaskType
+
+    task_type = await session.get(TaskType, task.task_type_id)
+    assert task_type is not None and task_type.name == "Story"
 
 
 @pytest.mark.parametrize(
@@ -6183,7 +6189,7 @@ async def _status(client, actor, job_id) -> str:
 
 
 async def _user_sessions(monkeypatch, role_session, count):
-    sessions = iter([await role_session("app_user") for _ in range(count)])
+    sessions = iter([await role_session("app_admin") for _ in range(count)])
     monkeypatch.setattr(
         import_worker, "_open_user_session", lambda _guild_id: next(sessions)
     )

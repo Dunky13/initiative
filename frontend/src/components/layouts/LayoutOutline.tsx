@@ -140,7 +140,9 @@ export const listChoices = (
   plugins: PickerPlugin[],
   translate: TranslateFn
 ): AddChoices => {
-  if (layout.kind === "calendar") return { fields: [], plugins: [], parts: [] };
+  if (layout.kind === "calendar" || layout.kind === "gantt") {
+    return { fields: [], plugins: [], parts: [] };
+  }
   const card = cardOf(layout.definition, fields);
   const board = layout.kind === "board";
   return {
@@ -405,7 +407,7 @@ export const ListLayoutOutline = ({
           </DndContext>
         ) : null}
       </div>
-      {layout === "calendar" ? null : (
+      {layout === "calendar" || layout === "gantt" ? null : (
         <div className="border-t p-3">
           <AddPicker choices={choices} labelOf={labelOf} adders={adders} locked={locked} />
         </div>

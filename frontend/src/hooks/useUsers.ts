@@ -315,7 +315,7 @@ export const useInitiativeMemberSearch = (
 export type MemberSearchScope =
   | { type: "community"; communityIdOverride?: number }
   | { type: "initiative"; initiativeId: number | null | undefined }
-  | { type: "canOpen"; tool: Tool; id: number | null | undefined };
+  | { type: "canOpen"; tool: Tool; id: number | null | undefined; communityIdOverride?: number };
 
 /**
  * One entry point for the member typeaheads, selected by `scope`. Both
@@ -336,7 +336,7 @@ export const useMemberSearch = (
     userIds,
     pageSize,
     enabled: enabled && scope.type !== "initiative",
-    communityIdOverride: scope.type === "community" ? scope.communityIdOverride : undefined,
+    communityIdOverride: scope.type === "initiative" ? undefined : scope.communityIdOverride,
     canOpen: scope.type === "canOpen" ? { tool: scope.tool, id: scope.id } : undefined,
   });
   const initiativeQuery = useInitiativeMemberSearch(

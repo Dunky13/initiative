@@ -34,11 +34,12 @@ from pydantic import AfterValidator, ConfigDict, Field, field_validator, model_v
 from app.core.tools import Tool
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.schemas.base import SanitizedBaseModel
-from app.schemas.query import FilterOp, SortDir
+from app.schemas.query import DateBucket, FilterOp, SortDir
 from app.services.marketplace import contract
 from app.services.marketplace.manifest_values import (
     IDENTIFIER_CHARS,
     MAX_IDENTIFIER_LENGTH,
+    MAX_METADATA_KEY_LENGTH,
     is_metadata_key,
 )
 from app.services.tenant.properties import MAX_PROPERTY_FILTERS
@@ -112,6 +113,8 @@ class TaskFilterSpec(_Strict):
 
     status_ids: List[int] = Field(default_factory=list, max_length=MAX_STATUS_IDS)
     status_categories: List[TaskStatusCategory] = Field(default_factory=list)
+    #: The project's task types, by id.
+    type_ids: List[int] = Field(default_factory=list, max_length=MAX_STATUS_IDS)
     priorities: List[TaskPriority] = Field(default_factory=list)
     #: Only a list that holds several communities' tasks narrows by them.
     community_ids: List[int] = Field(default_factory=list, max_length=MAX_COMMUNITY_IDS)
@@ -173,6 +176,8 @@ class TaskFieldId(str, Enum):
     rather than a ``Literal`` so the generated client names the set."""
 
     title = "title"
+    #: Which of the project's task types it is: its icon, or its icon and name.
+    type = "type"
     description = "description"
     assignees = "assignees"
     startDate = "startDate"
@@ -247,6 +252,10 @@ PLUGIN_FIELD_PREFIX = "plugin:"
 _DIGITS = frozenset("0123456789")
 #: A row id is a Postgres ``integer``: at most ten digits.
 _MAX_ID_DIGITS = 10
+#: The longest field id a layout names: a plug-in's, ``plugin:<install>:<key>``.
+MAX_FIELD_ID_LENGTH = (
+    len(PLUGIN_FIELD_PREFIX) + _MAX_ID_DIGITS + 1 + MAX_METADATA_KEY_LENGTH
+)
 
 
 def _is_row_id(value: str) -> bool:
@@ -277,35 +286,30 @@ NamedFieldId = Annotated[str, AfterValidator(_named_field)]
 CardFieldId = Union[TaskFieldId, NamedFieldId]
 
 
-class TaskGroupingId(str, Enum):
-    """What a project's tasks are grouped by beside their properties: their
-    date window and status, which are not fields, and the built-in fields whose
-    values group. In the order a list offers them as shipped: the two a table
-    always offered first."""
-
-    date = "date"
-    tags = "tags"
-    status = "status"
-    priority = "priority"
-    assignees = "assignees"
+#: The characters a built-in field's name is written in.
+_FIELD_NAME = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_")
 
 
-def _property_field(value: str) -> str:
-    if value.startswith(PROPERTY_FIELD_PREFIX) and _is_row_id(
-        value.removeprefix(PROPERTY_FIELD_PREFIX)
-    ):
+def _grouping_field(value: str) -> str:
+    """A built-in field's name, or ``property:<id>``. Whether the list's
+    items can be grouped by it is the field registry's answer, asked when the
+    layout is written."""
+    if value.startswith(PROPERTY_FIELD_PREFIX):
+        if _is_row_id(value.removeprefix(PROPERTY_FIELD_PREFIX)):
+            return value
+    elif 0 < len(value) <= 64 and set(value) <= _FIELD_NAME:
         return value
-    raise ValueError("a grouping is a built-in one or 'property:<id>'")
+    raise ValueError("a grouping is a field's name or 'property:<id>'")
 
 
-#: A grouping: a built-in one, or a property's, which only a select,
-#: multi-select, person or checkbox property makes.
-GroupingId = Union[TaskGroupingId, Annotated[str, AfterValidator(_property_field)]]
+#: What a list is grouped by: a field of what it lists, or a custom property.
+GroupingField = Annotated[str, AfterValidator(_grouping_field)]
 
 
 # The built-in fields each place draws, named for the generated client.
 _COLUMNS = {
     "title",
+    "type",
     "assignees",
     "startDate",
     "dueDate",
@@ -315,6 +319,7 @@ _COLUMNS = {
 }
 _PAGE = {
     "title",
+    "type",
     "description",
     "assignees",
     "checklist",
@@ -503,7 +508,7 @@ DetailStackPart.model_rebuild()
 
 #: Every way a layout can list a tool's items; which of them a tool draws is
 #: ``app.core.tools.LIST_LAYOUTS``.
-ListLayoutKind = Literal["table", "board", "calendar"]
+ListLayoutKind = Literal["table", "board", "gantt", "calendar"]
 #: Every kind of thing a detail layout shows one of; which a tool holds is
 #: ``app.core.tools.DETAIL_LAYOUTS``.
 DetailLayoutKind = Literal[
@@ -550,9 +555,11 @@ class LayoutGrouping(_Strict):
     """One way a list offers to group its tasks, and the groups it leaves out
     while grouped by it."""
 
-    field: GroupingId
-    #: Each by its key: a status's, a person's or a tag's id, an option, or
-    #: "" for the tasks with none.
+    field: GroupingField
+    #: For a date, the bucket of the calendar it groups by.
+    bucket: Optional[DateBucket] = None
+    #: Each by its key: a status's, a person's or a tag's id, an option, a
+    #: bucket's first day, or "" for the tasks with none.
     hidden: List[Annotated[str, Field(max_length=MAX_SLUG_LENGTH)]] = Field(
         default_factory=list, max_length=MAX_HIDDEN_GROUPS
     )
@@ -569,8 +576,8 @@ class ListLayoutDefinition(_Strict):
     """How a list draws its items, and the presets and groupings it offers.
     What it leaves out is drawn as shipped: a board with no ``card`` draws the
     shipped card, a table with no ``columns`` the shipped columns, a list with
-    no ``presets`` the shipped presets and none with no ``groupings`` the
-    built-in groupings."""
+    no ``presets`` the shipped presets and none with no ``groupings`` every
+    field of what it lists that groups without a bucket."""
 
     card: Optional[CardPart] = None
     columns: Optional[List[ColumnFieldId]] = None
@@ -580,22 +587,26 @@ class ListLayoutDefinition(_Strict):
     )
     #: What everyone starts grouped by, one of the groupings the list offers;
     #: none starts ungrouped. A person's own choice is kept over it.
-    group_by: Optional[GroupingId] = None
+    group_by: Optional[GroupingField] = None
     #: A board's columns that take at most so many open tasks.
     limits: Optional[List[ColumnLimit]] = Field(
         default=None, max_length=MAX_LIMITED_COLUMNS
     )
+    #: Left out of the list's menu; none keeps what its tool ships.
+    hidden: Optional[bool] = None
 
     @model_validator(mode="after")
     def _offers_what_it_starts_on(self) -> "ListLayoutDefinition":
-        offered = (
-            [grouping.field for grouping in self.groupings]
-            if self.groupings is not None
-            else list(TaskGroupingId)
-        )
+        # With no groupings of its own, what a list offers is the registry's
+        # answer, which the write checks against.
+        offered = [grouping.field for grouping in self.groupings or ()]
         if len(set(offered)) != len(offered):
             raise ValueError("each grouping is offered once")
-        if self.group_by is not None and self.group_by not in offered:
+        if (
+            self.groupings is not None
+            and self.group_by is not None
+            and self.group_by not in offered
+        ):
             raise ValueError("a list starts grouped by a grouping it offers")
         limited = [entry.status_id for entry in self.limits or ()]
         if len(set(limited)) != len(limited):
@@ -633,6 +644,9 @@ class ListLayoutWrite(_Strict):
 
 class DetailLayoutWrite(_Strict):
     kind: DetailLayoutKind
+    #: The type of task a project's task page is for; required there, and
+    #: nowhere else.
+    task_type_id: Optional[int] = Field(default=None, gt=0)
     definition: DetailLayoutDefinition
 
 
@@ -659,6 +673,8 @@ class ListLayoutRead(SanitizedBaseModel):
     kind: ListLayoutKind
     #: Whether the target opens on it.
     is_default: bool
+    #: Whether its menu leaves it out.
+    hidden: bool = False
     definition: ListLayoutDefinition
     #: When it was last changed; None as shipped.
     updated_at: Optional[datetime] = None
@@ -670,6 +686,10 @@ class DetailLayoutRead(SanitizedBaseModel):
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     kind: DetailLayoutKind
+    #: The type of task a project's task page is for, and its name; None for
+    #: every other detail.
+    task_type_id: Optional[int] = None
+    task_type_name: Optional[str] = None
     definition: DetailLayoutDefinition
     #: When it was last changed; None as shipped.
     updated_at: Optional[datetime] = None

@@ -60,7 +60,9 @@ async def desk(session, acting_user):
     await session.commit()
 
     await set_rls_context(session, SystemGuild(guild_id))
-    await task_statuses_service.ensure_default_statuses(session, project_id)
+    await task_statuses_service.ensure_default_statuses(
+        session, project_id, locale="en"
+    )
     statuses = await _statuses(session, project_id)
     awaiting = TaskStatus(
         project_id=project_id,

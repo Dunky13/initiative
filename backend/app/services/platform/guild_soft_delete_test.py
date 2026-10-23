@@ -12,7 +12,6 @@ from httpx import AsyncClient
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core import config as config_module
 from app.core.audit_events import AuditEventType
 from app.core.messages import GuildMessages
 from app.core.moderation import HoldReason, HoldVia
@@ -36,10 +35,12 @@ from app.models.platform.identity_ref import IdentityEntity, IdentityPurpose
 from app.models.tenant.content_hold import ContentHold
 from app.models.tenant.guild_plugin_user_connection import GuildPluginUserConnection
 from app.services import email as email_service
-from app.services.platform import billing_ping, guild_purge
+from app.services.platform import guild_purge
 from app.services.platform import guilds as guilds_service
 from app.services.platform.identity_refs import billing_ref, existing_ref
 from app.testing import emitted, route_session_to_guild
+from app.testing.billing_boundary import change_kinds
+from app.testing.billing_managed import billing_manages_plans
 from app.testing.factories import (
     create_guild,
     create_guild_membership,
@@ -240,49 +241,45 @@ async def _billing_ref(guild_id: int) -> str | None:
     )
 
 
-@pytest.fixture
-def lifecycle_pings(monkeypatch):
-    """Billing configured, the lifecycle pings captured instead of sent, and
-    the membership pings from seating a guild's creator dropped."""
-    monkeypatch.setattr(
-        config_module.settings, "BILLING_SERVICE_URL", "https://billing.internal"
-    )
-    monkeypatch.setattr(config_module.settings, "BILLING_HMAC_SECRET", "ping-secret")
-    sent: list[int] = []
-
-    async def _capture(guild_id: int) -> None:
-        sent.append(guild_id)
-
-    async def _drop(guild_id: int) -> None:
-        pass
-
-    monkeypatch.setattr(billing_ping, "_send_lifecycle_ping", _capture)
-    monkeypatch.setattr(billing_ping, "_send_membership_ping", _drop)
-    return sent
+async def _lifecycle_changes(session: AsyncSession, guild_id: int) -> list[str]:
+    """The lifecycle kinds billing's change log holds for one community,
+    besides its creation."""
+    session.expunge_all()
+    return [
+        kind
+        for kind in await change_kinds(session, guild_id)
+        if kind != "community.created"
+    ]
 
 
 async def test_billing_keeps_its_name_for_a_deleted_community_and_hears_both_ways(
-    client: AsyncClient, session: AsyncSession, acting_user, lifecycle_pings
+    client: AsyncClient, session: AsyncSession, acting_user
 ):
     """A soft delete keeps the guild's billing reference, and both the delete
-    and the restore send a lifecycle ping."""
+    and the restore are written to billing's change log."""
     operator = await acting_user("owner")
     admin, guild = await _seated_guild(session)
     await create_guild_membership(session, user=await create_user(session), guild=guild)
     ref = await billing_ref(IdentityEntity.guild, guild.id)
 
-    await _delete_via_danger_zone(client, guild=guild, headers=get_auth_headers(admin))
-    assert await _billing_ref(guild.id) == ref
-    assert lifecycle_pings == [guild.id]
+    async with billing_manages_plans(session):
+        await _delete_via_danger_zone(
+            client, guild=guild, headers=get_auth_headers(admin)
+        )
+        assert await _billing_ref(guild.id) == ref
+        assert await _lifecycle_changes(session, guild.id) == ["community.deleted"]
 
-    response = await client.post(
-        f"/api/v1/settings/communities/{guild.id}/restore",
-        headers=operator.headers,
-        json={"status": "active"},
-    )
-    assert response.status_code == 200, response.text
-    assert await _billing_ref(guild.id) == ref
-    assert lifecycle_pings == [guild.id, guild.id]
+        response = await client.post(
+            f"/api/v1/settings/communities/{guild.id}/restore",
+            headers=operator.headers,
+            json={"status": "active"},
+        )
+        assert response.status_code == 200, response.text
+        assert await _billing_ref(guild.id) == ref
+        assert await _lifecycle_changes(session, guild.id) == [
+            "community.deleted",
+            "community.restored",
+        ]
 
 
 async def test_the_purge_is_what_drops_billings_name(
@@ -764,10 +761,10 @@ async def _hold_since(session: AsyncSession, guild_id: int, held_at: datetime) -
 
 
 async def test_a_hold_that_runs_out_deletes_the_community(
-    session: AsyncSession, lifecycle_pings, monkeypatch
+    session: AsyncSession, monkeypatch
 ):
     """Deleted, not destroyed: the retention window starts from here, the seat
-    hears as it would from any deletion, and billing is told to read it.
+    hears as it would from any deletion, and billing's change log says so.
     Nobody asked for it, so even a community of one keeps its roster."""
     seat = await create_user(session, email="hold-seat@example.com")
     guild = await create_guild(session, creator=seat)
@@ -786,10 +783,13 @@ async def test_a_hold_that_runs_out_deletes_the_community(
 
     monkeypatch.setattr(email_service, "announce_community_deleted", _capture)
 
-    assert (
-        await guild_purge.delete_expired_holds(session, now=datetime.now(timezone.utc))
-        == 1
-    )
+    async with billing_manages_plans(session):
+        assert (
+            await guild_purge.delete_expired_holds(
+                session, now=datetime.now(timezone.utc)
+            )
+            == 1
+        )
 
     session.expunge_all()
     row = (await session.exec(select(Guild).where(Guild.id == guild_id))).one()
@@ -801,7 +801,7 @@ async def test_a_hold_that_runs_out_deletes_the_community(
         )
     ).all()
     assert len(roster) == 1
-    assert lifecycle_pings == [guild_id]
+    assert await _lifecycle_changes(session, guild_id) == ["community.deleted"]
     assert [(n.community_name, n.recipients) for n in letters] == [
         (name, ["hold-seat@example.com"])
     ]

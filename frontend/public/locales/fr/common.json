@@ -75,6 +75,7 @@
   "copyUnavailable": "Copie impossible — copiez-le à la main",
   "untitled": "Sans titre",
   "appName": "initiative",
+  "pageTitle": "{{name}} - Initiative",
   "send": "Envoyer",
   "submitting": "Envoi en cours…",
   "clear": "Effacer",
@@ -329,6 +330,12 @@
     "title": "Page introuvable",
     "description": "Il n’y a rien à cette adresse. Le lien est peut-être mal saisi, ou la page a été déplacée."
   },
+  "appUpdate": {
+    "ready": "La version {{version}} est prête. Rechargez pour l'utiliser.",
+    "reload": "Recharger",
+    "updated": "Mis à jour vers la version {{version}}.",
+    "whatsNew": "Nouveautés"
+  },
   "nativeUpdate": {
     "unsigned": "La mise à jour de ce serveur n'a pas été publiée par Initiative, l'application reste donc en version {{version}}.",
     "desktopReady": "Initiative a téléchargé sa mise à jour. Redémarrez pour terminer.",
@@ -366,6 +373,7 @@
     "discard": "Abandonner",
     "undo": "Annuler",
     "moved": "Déplacé vers {{status}}",
+    "typeChanged": "Changé en {{type}}",
     "cleared": "{{field}} : valeur effacée"
   },
   "descriptionField": {
@@ -374,7 +382,8 @@
     "unsavedTitle": "Abandonner les modifications non enregistrées ?",
     "unsavedBody": "Vous avez une description non enregistrée. Si vous partez maintenant, elle sera perdue.",
     "leave": "Quitter",
-    "stay": "Rester"
+    "stay": "Rester",
+    "undoSuggestion": "Annuler la suggestion"
   },
   "kinds": {
     "project": {

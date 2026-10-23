@@ -169,7 +169,11 @@ export const useFieldDraft = <V,>(
       },
       onKeyDown: (event) => {
         if (!isTyping(event.target)) return;
-        if (event.key === "Enter" && !(event.target instanceof HTMLTextAreaElement)) {
+        // A textarea marked single-line (a title that wraps) saves on Enter too.
+        const multiline =
+          event.target instanceof HTMLTextAreaElement &&
+          event.target.getAttribute("aria-multiline") !== "false";
+        if (event.key === "Enter" && !multiline) {
           event.preventDefault();
           finish();
           drafting?.submit();

@@ -916,8 +916,6 @@ describe("OperatorDashboardCommunitiesPage", () => {
 
       expect(item.getAttribute("href")).toContain("community=7");
       expect(item.getAttribute("href")).toContain("form=request");
-      // Support doesn't moderate, so the request starts where it always did.
-      expect(item.getAttribute("href")).not.toContain("level=");
       expect(screen.queryByRole("menuitem", { name: "Break glass" })).not.toBeInTheDocument();
     });
 

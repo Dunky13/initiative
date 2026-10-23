@@ -449,6 +449,12 @@
     "body": "L’essai de <strong>{{community}}</strong> est terminé et la communauté est désormais en lecture seule. Choisissez un forfait dans le portail de facturation pour continuer à modifier. Rien n’a été supprimé.",
     "buttonLabel": "Choisir un forfait"
   },
+  "communityPauseReminder": {
+    "subject": "Le forfait de {{community}} est en pause jusqu'à ce que vous le repreniez",
+    "title": "Le forfait de {{community}} est en pause",
+    "body": "Le forfait de <strong>{{community}}</strong> est en pause. Ses membres peuvent toujours tout lire et exporter, mais rien de nouveau ne peut être ajouté, et rien n'est facturé. Reprenez le forfait avant le <strong>{{date}}</strong> pour garder la communauté : ensuite, elle est mise en attente, puis supprimée plus tard si son forfait n'est pas rétabli.",
+    "buttonLabel": "Reprendre le forfait"
+  },
   "communityWelcome": {
     "subject": "{{community}} est prête",
     "title": "{{community}} est prête",

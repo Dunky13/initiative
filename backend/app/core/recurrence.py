@@ -27,6 +27,7 @@ from datetime import MAXYEAR, date, datetime, time, timedelta, timezone, tzinfo
 from functools import lru_cache
 from heapq import merge
 from itertools import groupby, islice, takewhile
+from types import EllipsisType
 from typing import Iterable, Iterator, Literal
 
 import icalendar
@@ -40,10 +41,10 @@ RecurrenceKind = Literal["task", "event"]
 
 _WEEKDAYS = ("MO", "TU", "WE", "TH", "FR", "SA", "SU")
 
-#: The frequencies each kind may repeat at. Every task occurrence is a new row,
-#: so tasks repeat daily at the most.
+#: Hourly task repeats are restricted to rolling by the task's writer, since
+#: its strategy is stored beside the rule rather than inside RFC 5545.
 _FREQUENCIES: dict[RecurrenceKind, frozenset[str]] = {
-    "task": frozenset({"DAILY", "WEEKLY", "MONTHLY", "YEARLY"}),
+    "task": frozenset({"HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"}),
     "event": frozenset({"HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"}),
 }
 
@@ -227,12 +228,18 @@ def normalize(text: str, *, kind: RecurrenceKind) -> str:
     return lines
 
 
+def of_hours(rule: dict[str, list]) -> bool:
+    """Whether a rule picks hours rather than days: its shift is then an exact
+    offset, not whole days."""
+    return rule["FREQ"][0] == "HOURLY" or "BYHOUR" in rule
+
+
 def shift_for(text: str, start: datetime, zone: tzinfo) -> int:
     """The shift of a rule picked in ``zone`` for a series starting at
     ``start``: whole days for a rule of days, the offset for a rule of hours."""
     rule = parse(text).rule
     local = start.astimezone(zone)
-    if rule["FREQ"][0] == "HOURLY" or "BYHOUR" in rule:
+    if of_hours(rule):
         return int((local.utcoffset() or timedelta(0)).total_seconds() // 60)
     return (local.date() - start.astimezone(timezone.utc).date()).days * 1440
 
@@ -413,15 +420,34 @@ def first(text: str, start: datetime, shift: int, n: int) -> list[datetime]:
     return list(islice(_walk(parse(text), start, shift, start), n))
 
 
+def _remaining(repeat: Recurrence, done: int) -> Recurrence:
+    if done and (total := repeat.rule.get("COUNT")):
+        return Recurrence(
+            {**repeat.rule, "COUNT": [max(total[0] - done, 0)]},
+            repeat.exdates,
+            repeat.rdates,
+        )
+    return repeat
+
+
 def next_start(
-    text: str, start: datetime, shift: int = 0, *, count: bool = True
+    text: str,
+    start: datetime,
+    shift: int = 0,
+    *,
+    count: bool = True,
+    after: datetime | None = None,
+    done: int = 0,
 ) -> datetime | None:
-    """The first occurrence after ``start`` of a series starting there."""
+    """The first occurrence after ``after`` (by default ``start``), keeping
+    the series anchored at ``start`` even after an off-cadence extra date."""
+    lower = start if after is None else after
+    repeat = _remaining(parse(text), done)
     return next(
         (
             value
-            for value in _walk(parse(text), start, shift, start, count=count)
-            if value > start
+            for value in _walk(repeat, start, shift, lower, count=count)
+            if value > lower
         ),
         None,
     )
@@ -449,12 +475,8 @@ def last_start(
         if not isinstance(end, datetime):
             end = datetime.combine(end, _END_OF_DAY, timezone.utc) - offset
         return max([end.astimezone(timezone.utc), *extra])
-    if count := recurrence.rule.get("COUNT"):
-        left = Recurrence(
-            {**recurrence.rule, "COUNT": [max(count[0] - done, 1)]},
-            recurrence.exdates,
-            recurrence.rdates,
-        )
+    if "COUNT" in recurrence.rule:
+        left = _remaining(recurrence, done)
         return max(_walk(left, start, shift, start), default=None)
     return None
 
@@ -468,10 +490,13 @@ def between(
     *,
     count: bool = True,
     at_most: int | None = None,
+    done: int = 0,
 ) -> list[datetime]:
     """The occurrences starting in ``[lower, upper]``: the first ``at_most``
     of them, with one."""
-    starts = _walk(parse(text), start, shift, lower, upper, count=count)
+    starts = _walk(
+        _remaining(parse(text), done), start, shift, lower, upper, count=count
+    )
     return list(islice(starts, at_most))
 
 
@@ -519,6 +544,28 @@ def restarted(
         tuple(move(value) for value in repeat.rdates),
     ).to_lines()
     return lines, new_shift
+
+
+def edited(
+    text: str | None,
+    shift: int,
+    sent: str | None | EllipsisType,
+    *,
+    moved: bool,
+    old_start: datetime | None,
+    new_start: datetime | None,
+    tz: str | None,
+    kind: RecurrenceKind,
+) -> tuple[str | None, int]:
+    """A task's or an event's repeat after an edit, and its shift. ``sent`` is
+    the rule the edit wrote: ``...`` for none, ``None`` to stop repeating, or a
+    rule, stored from the new start as picked in ``tz``. Without one, an edit
+    that ``moved`` the start takes the repeat with it (:func:`restarted`)."""
+    if sent is not ...:
+        return stored(sent, new_start, tz, kind=kind) if sent else (None, 0)
+    if text and moved and old_start and new_start:
+        return restarted(text, shift, old_start, new_start, tz)
+    return text, shift
 
 
 def rehomed(

@@ -22,15 +22,16 @@ export function resetCounter(): void {
 // runtime; this only fills the gap in synthetic fixtures.
 const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
   member: [],
-  support: [
-    "access.request",
-    "billing.support",
-    "communities.read",
-    "users.age_unblock",
-    "users.read",
-  ],
   moderator: [
     "access.request",
+    "communities.read",
+    "communities.suspend",
+    "content.moderate",
+    "users.read",
+  ],
+  support: [
+    "access.request",
+    "access.request_any",
     "billing.support",
     "communities.read",
     "communities.suspend",
@@ -42,6 +43,7 @@ const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
   operator: [
     "access.approve",
     "access.request",
+    "access.request_any",
     "announcements.manage",
     "billing.insights",
     "billing.contracts",
@@ -62,6 +64,9 @@ const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
     "announcements.manage",
     "plugins.manage",
     "billing.insights",
+    "billing.contracts",
+    "billing.directory",
+    "billing.control",
     "config.manage",
     "content.moderate",
     "data.bypass",
@@ -194,6 +199,7 @@ export function buildUser(overrides: Partial<UserRead> = {}): UserRead {
     task_completion_visual_feedback: "none",
     task_completion_audio_feedback: false,
     task_completion_haptic_feedback: false,
+    smart_task_titles: true,
     locale: "en",
     ...overrides,
   };

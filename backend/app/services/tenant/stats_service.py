@@ -154,7 +154,7 @@ async def calculate_on_time_rate(
     stmt = (
         select(
             func.count(Task.id).label("total"),
-            func.sum(case((Task.updated_at <= Task.due_date, 1), else_=0)).label(
+            func.sum(case((Task.completed_at <= Task.due_date, 1), else_=0)).label(
                 "on_time"
             ),
         )
@@ -197,7 +197,7 @@ async def calculate_avg_completion_days(
     """
     stmt = (
         select(
-            func.avg(func.extract("epoch", Task.updated_at - Task.start_date) / 86400)
+            func.avg(func.extract("epoch", Task.completed_at - Task.start_date) / 86400)
         )
         .join(TaskAssignee, TaskAssignee.task_id == Task.id)
         .join(TaskStatus, TaskStatus.id == Task.task_status_id)
@@ -255,8 +255,8 @@ async def get_completed_counts(
             func.sum(
                 case(
                     (
-                        (Task.updated_at >= week_start_utc)
-                        & (Task.updated_at < week_end_utc),
+                        (Task.completed_at >= week_start_utc)
+                        & (Task.completed_at < week_end_utc),
                         1,
                     ),
                     else_=0,
@@ -334,8 +334,8 @@ async def get_velocity_data(
             .where(
                 TaskAssignee.user_id == user_id,
                 TaskStatus.category == TaskStatusCategory.done,
-                Task.updated_at >= week_start_utc,
-                Task.updated_at < week_end_utc,
+                Task.completed_at >= week_start_utc,
+                Task.completed_at < week_end_utc,
             )
         )
 
@@ -520,8 +520,8 @@ async def get_backlog_trend(
         .where(
             TaskAssignee.user_id == user_id,
             TaskStatus.category == TaskStatusCategory.done,
-            Task.updated_at >= week_start_utc,
-            Task.updated_at < week_end_utc,
+            Task.completed_at >= week_start_utc,
+            Task.completed_at < week_end_utc,
         )
     )
 
@@ -665,7 +665,7 @@ async def get_user_stats(
     async def fetch(routed: AsyncSession, gid: int) -> List[UserStatsResponse]:
         return [await _compute_guild_stats(routed, user, gid, days)]
 
-    parts = await gather_across_guilds(session, user.id, target_guilds, fetch)
+    parts = await gather_across_guilds(session, {user.id: target_guilds}, fetch)
 
     if not parts:
         return UserStatsResponse(

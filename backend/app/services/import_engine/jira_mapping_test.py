@@ -862,3 +862,89 @@ def test_a_project_mapped_a_page_at_a_time_is_the_project_mapped_whole():
         whole.properties,
     )
     assert "Team" in paged.properties
+
+
+# --- issue types -------------------------------------------------------------
+
+
+def test_each_issue_type_becomes_a_task_type_and_each_task_is_its_own():
+    envelope = _envelope(
+        issues=[
+            _issue("ACME-1", "One", issuetype={"name": "Story"}),
+            _issue("ACME-2", "Two", issuetype={"name": "Bug"}),
+            _issue("ACME-3", "Three", issuetype={"name": "Task"}),
+            _issue("ACME-4", "Four", issuetype={"name": "Bug"}),
+        ]
+    )
+    assert [
+        (t["name"], t["is_default"], t["layout_preset"], t["icon"])
+        for t in envelope["task_types"]
+    ] == [
+        ("Story", False, "plain", "book-open"),
+        ("Bug", False, "fix", "bug"),
+        ("Task", True, "plain", "square-check"),
+    ]
+    assert [t["type_name"] for t in envelope["tasks"]] == [
+        "Story",
+        "Bug",
+        "Task",
+        "Bug",
+    ]
+
+
+def test_without_a_task_type_the_commonest_is_the_default():
+    envelope = _envelope(
+        issues=[
+            _issue("ACME-1", "One", issuetype={"name": "Story"}),
+            _issue("ACME-2", "Two", issuetype={"name": "Spike"}),
+            _issue("ACME-3", "Three", issuetype={"name": "Story"}),
+        ]
+    )
+    assert [(t["name"], t["is_default"]) for t in envelope["task_types"]] == [
+        ("Story", True),
+        ("Spike", False),
+    ]
+
+
+def test_more_issue_types_than_a_project_holds_keep_the_commonest_and_every_name():
+    from app.core.task_types import MAX_TASK_TYPES
+
+    rare = [f"Kind {n}" for n in range(MAX_TASK_TYPES)]
+    mapped = _mapped(
+        issues=[
+            _issue("ACME-1", "One", issuetype={"name": "Bug"}),
+            _issue("ACME-2", "Two", issuetype={"name": "Bug"}),
+            *(
+                _issue(f"ACME-{n + 3}", name, issuetype={"name": name})
+                for n, name in enumerate(rare)
+            ),
+        ]
+    )
+    envelope = mapped.envelope
+
+    names = [t["name"] for t in envelope["task_types"]]
+    assert len(names) == MAX_TASK_TYPES
+    assert names[0] == "Bug"
+    # Every issue still says what it was, the left-out kinds included.
+    [kept] = [d for d in envelope["property_definitions"] if d["name"] == "Issue type"]
+    assert [o["value"] for o in kept["options"]] == ["Bug", *rare]
+    values = {
+        task["title"]: next(
+            v["value_text"]
+            for v in task["properties"]
+            if v["property_name"] == "Issue type"
+        )
+        for task in envelope["tasks"]
+    }
+    assert values[rare[-1]] == rare[-1]
+    # The review counts the tasks it fills, as any other property's.
+    assert mapped.properties["Issue type"] == ("select", 2 + len(rare))
+
+
+def test_issue_types_that_all_fit_need_no_property():
+    envelope = _envelope(issues=[_issue("ACME-1", "One", issuetype={"name": "Bug"})])
+    assert "Issue type" not in {d["name"] for d in envelope["property_definitions"]}
+
+
+def test_issues_naming_no_type_leave_the_starting_types():
+    assert "task_types" not in _envelope()

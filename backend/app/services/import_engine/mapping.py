@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from app.core import recurrence
-from app.models.tenant.task import TaskStatusCategory
+from app.models.tenant.task import RecurrenceStrategy, TaskStatusCategory
 
 #: What an imported tag is coloured. A foreign label rarely carries a colour,
 #: so this is the app's own default rather than a translation of anything — a
@@ -118,12 +118,16 @@ def repeat_fields(
         text, shift = recurrence.stored(
             rule, datetime.fromisoformat(due), tz, kind="task"
         )
+        if not rolling and recurrence.parse(text).rule.get("FREQ") == ["HOURLY"]:
+            return {}
     except (ValueError, TypeError):
         return {}
     return {
         "recurrence": text,
         "recurrence_shift": shift,
-        "recurrence_strategy": "rolling" if rolling else "fixed",
+        "recurrence_strategy": (
+            RecurrenceStrategy.rolling if rolling else RecurrenceStrategy.fixed
+        ),
     }
 
 
@@ -244,8 +248,11 @@ def build_envelope(
     app_version: str,
     source_url: str | None = None,
     property_definitions: list[dict[str, Any]] | None = None,
+    task_types: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """The project envelope itself — the same shape a project export writes."""
+    """The project envelope itself — the same shape a project export writes.
+    Without ``task_types`` the project gets the ones a new project starts
+    with."""
     return {
         "type": "initiative-project",
         "schema_version": 1,
@@ -261,6 +268,8 @@ def build_envelope(
             for tag_name in collect_tag_names(tasks)
         ],
         "task_statuses": statuses,
+        **({"task_types": task_types} if task_types else {}),
         "property_definitions": property_definitions or [],
         "tasks": tasks,
+        "layouts": [],
     }

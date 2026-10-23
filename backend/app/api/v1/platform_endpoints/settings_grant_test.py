@@ -9,8 +9,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.platform.guild import CommunityRole
 from app.models.platform.user import UserRole
-from app.models.tenant.ai_member_key import GuildAIMemberKey
-from app.models.tenant.ai_member_pref import GuildAIMemberPref
 from app.services.platform import access_grants as access_grants_service
 from app.testing.factories import (
     create_auth_provider,
@@ -21,7 +19,6 @@ from app.testing.factories import (
     create_user,
     get_auth_headers,
 )
-from app.testing.schema_harness import route_session_to_guild
 
 
 async def _request_and_approve(client, *, requester, approver, guild, rung):
@@ -134,18 +131,14 @@ async def test_a_settings_only_superadmin_grant_reaches_ai_configuration(
     assert response.status_code == 200, response.text
 
 
-async def test_settings_grantee_deletion_purges_every_members_reference(
+async def test_settings_grantee_deletes_a_connection(
     client: AsyncClient, session: AsyncSession
 ):
     owner = await create_user(session, role=UserRole.owner)
-    member = await create_user(session)
     support = await create_user(session, role=UserRole.support)
     guild = await create_guild(session, creator=owner)
     await create_guild_membership(
         session, user=owner, guild=guild, role=CommunityRole.superadmin
-    )
-    await create_guild_membership(
-        session, user=member, guild=guild, role=CommunityRole.member
     )
     mode = await client.put(
         "/api/v1/settings/ai/platform/mode",
@@ -162,28 +155,6 @@ async def test_settings_grantee_deletion_purges_every_members_reference(
     assert created.status_code == 200, created.text
     connection_id = created.json()["id"]
 
-    member_headers = get_auth_headers(member)
-    key = await client.put(
-        f"/api/v1/c/{guild.id}/settings/ai/me/key",
-        headers=member_headers,
-        json={
-            "scope": "community",
-            "connection_id": connection_id,
-            "api_key": "sk-member",
-        },
-    )
-    assert key.status_code == 200, key.text
-    pref = await client.put(
-        f"/api/v1/c/{guild.id}/settings/ai/me/pref",
-        headers=member_headers,
-        json={
-            "scope": "community",
-            "connection_id": connection_id,
-            "enabled": True,
-        },
-    )
-    assert pref.status_code == 200, pref.text
-
     await _request_pair_and_approve(
         client,
         session,
@@ -199,23 +170,11 @@ async def test_settings_grantee_deletion_purges_every_members_reference(
     )
     assert deleted.status_code == 204, deleted.text
 
-    await route_session_to_guild(session, guild.id)
-    keys = (
-        await session.exec(
-            select(GuildAIMemberKey).where(
-                GuildAIMemberKey.connection_id == connection_id
-            )
-        )
-    ).all()
-    prefs = (
-        await session.exec(
-            select(GuildAIMemberPref).where(
-                GuildAIMemberPref.connection_id == connection_id
-            )
-        )
-    ).all()
-    assert keys == []
-    assert prefs == []
+    listed = await client.get(
+        f"/api/v1/c/{guild.id}/settings/ai/connections",
+        headers=get_auth_headers(owner),
+    )
+    assert listed.json() == []
 
 
 async def test_the_superadmin_grantee_reads_the_auth_controls(
@@ -269,6 +228,8 @@ async def test_the_superadmin_grantee_reads_the_auth_controls(
         "engagement_ranking_allowed_by_platform": True,
         "guest_max_days": None,
         "guest_max_days_by_platform": 90,
+        "allow_ai": True,
+        "ai_offered_by_platform": False,
     }
 
 
@@ -440,6 +401,55 @@ async def test_a_combined_conflict_sends_no_external_notification(
 
     assert response.status_code == 409, response.text
     send.assert_not_awaited()
+
+
+async def test_a_grant_counts_only_while_its_holder_may_hold_it(
+    client: AsyncClient, session: AsyncSession
+):
+    """A settings grant answers to its holder's rung as it stands now: demoted
+    to moderator, they keep a Moderate grant's reach and nothing else."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.platform.access_grant import AccessGrant
+
+    owner = await create_user(session, role=UserRole.owner)
+    support = await create_user(session, role=UserRole.support)
+    guild = await create_guild(session, creator=owner)
+    await _request_and_approve(
+        client, requester=support, approver=owner, guild=guild, rung="superadmin"
+    )
+    headers = get_auth_headers(support)
+    entry = await client.get(f"/api/v1/communities/{guild.id}", headers=headers)
+    assert entry.status_code == 200, entry.text
+    assert entry.json()["role"] == "superadmin"
+
+    support.role = UserRole.moderator
+    session.add(support)
+    await session.commit()
+    entry = await client.get(f"/api/v1/communities/{guild.id}", headers=headers)
+    assert entry.status_code == 403, entry.text
+
+    now = datetime.now(timezone.utc)
+    session.add(
+        AccessGrant(
+            user_id=support.id,
+            guild_id=guild.id,
+            access_level="moderate",
+            status="approved",
+            reason="a held comment",
+            requested_duration_minutes=60,
+            requested_by_id=support.id,
+            approved_by_id=owner.id,
+            decided_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+    )
+    await session.commit()
+    entry = await client.get(f"/api/v1/communities/{guild.id}", headers=headers)
+    assert entry.status_code == 403, entry.text
+    assert entry.json()["detail"] == "COMMUNITY_ADMIN_REQUIRED"
+    content = await client.get(f"/api/v1/c/{guild.id}/initiatives/", headers=headers)
+    assert content.status_code == 200, content.text
 
 
 # --- What each rung actually reaches -----------------------------------------

@@ -55,6 +55,11 @@ class NotificationType(str, Enum):
     #: notice billing sends.
     community_trial_ending = "community_trial_ending"
     community_trial_ended = "community_trial_ended"
+    #: A community this account holds the seat of — or owns, by billing's
+    #: account — has had its plan paused by its admin, and goes on hold on the
+    #: day the notice names unless it is resumed. Written once per reminder
+    #: billing sends.
+    community_pause_reminder = "community_pause_reminder"
     #: A community made for this account, by them or by staff on their behalf.
     #: Written once, where billing sets plans, inviting them to set up its plan.
     community_welcome = "community_welcome"

@@ -4,25 +4,16 @@ import {
   createCommunityConnection,
   createPlatformConnection,
   deleteCommunityConnection,
-  deleteMemberKey,
   deletePlatformConnection,
   fetchCommunityConnectionModels,
   fetchPlatformConnectionModels,
-  getGetMemberAiQueryKey,
   getGetPlatformAiModeQueryKey,
-  getGetResolvedAiSettingsQueryKey,
   getListCommunityConnectionsQueryKey,
-  getListMyAiQueryKey,
   getListPlatformConnectionsQueryKey,
-  getMemberAi,
   getPlatformAiMode,
   listCommunityConnections,
-  listMyAi,
   listPlatformConnections,
-  setMemberKey,
-  setMemberPref,
   testCommunityConnection,
-  testMemberAi,
   testPlatformConnection,
   updateCommunityConnection,
   updatePlatformAiMode,
@@ -35,16 +26,11 @@ import type {
   AIConnectionUpdate,
   AIModelsResponse,
   ConnectionScope,
-  MemberAIKeyUpdate,
-  MemberAIPrefUpdate,
-  MemberAIView,
-  MyAIConnectionRow,
   PlatformAIModeResponse,
   PlatformAIModeUpdate,
 } from "@/api/generated/initiativeAPI.schemas";
 import { invalidate, q } from "@/api/query-keys";
 import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
-import { queryClient } from "@/lib/queryClient";
 import type { MutationOpts } from "@/types/mutation";
 import type { QueryOpts } from "@/types/query";
 
@@ -55,27 +41,7 @@ const invalidateConnectionSurfaces = (scope: ConnectionScope) =>
     scope === "platform"
       ? invalidate(q.platformAIConnections())
       : invalidate(q.communityAIConnections()),
-    invalidate(q.memberAI()),
     invalidate(q.resolvedAISettings()),
-  ]);
-
-/**
- * A member-scoped change (key or preference) refreshes that community's member view
- * plus the resolved config the "generate with AI" buttons read. Keyed on the
- * explicit community rather than the tab's active community: the personal "My AI keys"
- * view manages any community the user belongs to, which may not be the active one.
- */
-const invalidateMemberSurfaces = (communityId: number) =>
-  Promise.all([
-    queryClient.invalidateQueries({
-      queryKey: getGetMemberAiQueryKey(communityId),
-    }),
-    queryClient.invalidateQueries({
-      queryKey: getGetResolvedAiSettingsQueryKey(communityId),
-    }),
-    // The personal "My AI" page aggregates every community, so a per-community write
-    // must refresh it too.
-    invalidate(q.myAI()),
   ]);
 
 // ── Platform mode (personal / platform) ───────────────────────────────────────
@@ -96,8 +62,8 @@ export const useUpdatePlatformAIMode = (
     ...rest,
     mutationFn: (data: PlatformAIModeUpdate) => updatePlatformAiMode(data),
     onSuccess: (...args) => {
-      // A mode change flips every downstream surface (connections, member view,
-      // resolved) across the active community — flush the whole AI family.
+      // A mode change flips every downstream surface (connections, resolved)
+      // across the active community — flush the whole AI family.
       void invalidate(q.allAISettings());
       onSuccess?.(...args);
     },
@@ -247,93 +213,5 @@ export const useFetchCommunityConnectionModels = (
   return useMutation({
     ...options,
     mutationFn: (connectionId: number) => fetchCommunityConnectionModels(communityId, connectionId),
-  });
-};
-
-// ── My AI (cross-community personal aggregate) ────────────────────────────────────
-
-/**
- * Flat list of every AI connection available to the current user across all
- * their communities (`GET /me/ai`) — one server-side aggregate, no per-community fan-out.
- * Powers the personal "My AI" page; writes still go through the community-scoped
- * member hooks below, keyed by each row's `community_id`.
- */
-export const useMyAI = (options?: QueryOpts<MyAIConnectionRow[]>) => {
-  return useQuery<MyAIConnectionRow[]>({
-    queryKey: getListMyAiQueryKey(),
-    queryFn: () => listMyAi(),
-    ...options,
-  });
-};
-
-// ── Member view + preferences (community-scoped) ──────────────────────────────────
-//
-// These take an explicit `communityId` rather than reading the tab's active community:
-// the personal "My AI keys" view lives outside the `/c/{id}` route tree and
-// manages whichever community the user picks, which need not be the active one.
-
-export const useMemberAI = (communityId: number, options?: QueryOpts<MemberAIView>) => {
-  const { enabled: userEnabled = true, ...rest } = options ?? {};
-  return useQuery<MemberAIView>({
-    queryKey: getGetMemberAiQueryKey(communityId),
-    queryFn: () => getMemberAi(communityId),
-    enabled: userEnabled && communityId > 0,
-    ...rest,
-  });
-};
-
-export const useSetMemberKey = (
-  communityId: number,
-  options?: MutationOpts<MemberAIView, MemberAIKeyUpdate>
-) => {
-  const { onSuccess, ...rest } = options ?? {};
-  return useMutation({
-    ...rest,
-    mutationFn: (data: MemberAIKeyUpdate) => setMemberKey(communityId, data),
-    onSuccess: (...args) => {
-      void invalidateMemberSurfaces(communityId);
-      onSuccess?.(...args);
-    },
-  });
-};
-
-export const useDeleteMemberKey = (
-  communityId: number,
-  options?: MutationOpts<MemberAIView, { scope: ConnectionScope; connectionId: number }>
-) => {
-  const { onSuccess, ...rest } = options ?? {};
-  return useMutation({
-    ...rest,
-    mutationFn: ({ scope, connectionId }: { scope: ConnectionScope; connectionId: number }) =>
-      deleteMemberKey(communityId, scope, connectionId),
-    onSuccess: (...args) => {
-      void invalidateMemberSurfaces(communityId);
-      onSuccess?.(...args);
-    },
-  });
-};
-
-export const useSetMemberPref = (
-  communityId: number,
-  options?: MutationOpts<MemberAIView, MemberAIPrefUpdate>
-) => {
-  const { onSuccess, ...rest } = options ?? {};
-  return useMutation({
-    ...rest,
-    mutationFn: (data: MemberAIPrefUpdate) => setMemberPref(communityId, data),
-    onSuccess: (...args) => {
-      void invalidateMemberSurfaces(communityId);
-      onSuccess?.(...args);
-    },
-  });
-};
-
-export const useTestMemberAI = (
-  communityId: number,
-  options?: MutationOpts<AIConnectionTestResponse, void>
-) => {
-  return useMutation({
-    ...options,
-    mutationFn: () => testMemberAi(communityId),
   });
 };

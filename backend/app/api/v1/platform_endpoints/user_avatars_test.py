@@ -186,12 +186,11 @@ async def test_a_moderator_takes_a_picture_down_and_the_owner_is_told(
     assert [n.type for n in notifications] == [NotificationType.avatar_removed]
 
 
-@pytest.mark.parametrize("role", [UserRole.member, UserRole.support])
 async def test_below_moderator_cannot_take_a_picture_down(
-    client: AsyncClient, session: AsyncSession, role: UserRole
+    client: AsyncClient, session: AsyncSession
 ):
     owner = await create_user(session)
-    actor = await create_user(session, role=role)
+    actor = await create_user(session)
     await _upload(client, get_auth_headers(owner))
 
     response = await client.delete(

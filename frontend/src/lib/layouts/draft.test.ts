@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildPropertyDefinition } from "@/__tests__/factories";
 
-import { type StoredRegions, storedLayout } from "./detailLayout";
+import { pageParts, type StoredRegions, storedLayout } from "./detailLayout";
 import {
   addableFields,
   addablePluginParts,
@@ -176,6 +176,33 @@ describe("where a dragged part lands", () => {
 });
 
 describe("a task detail laid out", () => {
+  it("reads top to bottom as a phone draws it, for an export of the page", () => {
+    // A plug-in's part after the checklist, which only a browser draws.
+    const stored = storedLayout(
+      insertAt(TASK_LAYOUT.root(null), [1], { type: "plugin", props: { plugin: 3, part: "ci" } }, 2)
+    );
+
+    expect(pageParts(TASK_LAYOUT.tree(stored as StoredRegions))).toEqual([
+      "title",
+      "actions",
+      "byline",
+      "notice",
+      "description",
+      "type",
+      "status",
+      "priority",
+      "assignees",
+      "dates",
+      "recurrence",
+      "tags",
+      "properties",
+      "checklist",
+      "case",
+      "relations",
+      "comments",
+    ]);
+  });
+
   it("is stored whole, without the shipped page's one-column order", () => {
     const shipped = TASK_LAYOUT.root(null);
     // Relations to the top of Main, then Checklist into the Description section.
@@ -218,7 +245,7 @@ describe("a task detail laid out", () => {
       ["comments", 6],
     ]);
     expect(orders(2)).toEqual([
-      ["status", 2],
+      ["type", 2],
       ["relations", 5],
     ]);
   });

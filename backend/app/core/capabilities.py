@@ -18,6 +18,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING, FrozenSet
 
+from app.models.platform.access_grant import AccessGrantPurpose, AccessLevel
 from app.models.platform.user import UserRole, UserStatus
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -36,12 +37,15 @@ class Capability(str, Enum):
     USERS_READ = "users.read"
 
     # Trust & safety / user lifecycle.
+    #: Moderation: renaming an account, clearing its picture and profile
+    #: fields, suspending it, and asking for a ``moderate`` grant to read what
+    #: the platform holds in a community.
     CONTENT_MODERATE = "content.moderate"
     #: Lift the block on an account that answered the age question as under
-    #: age. Its own capability rather than part of ``users.manage`` because it
-    #: is the one thing about an account the support tier may put right — a
-    #: mistyped birth year is a support ticket, not a moderation case.
+    #: age. A mistyped birth year is a support ticket, not a moderation case.
     USERS_AGE_UNBLOCK = "users.age_unblock"
+    #: Account recovery: second factor, sessions, password, sign-in lock, API
+    #: keys, reactivating and restoring.
     USERS_MANAGE = "users.manage"
     USERS_DELETE = "users.delete"
 
@@ -78,6 +82,20 @@ class Capability(str, Enum):
     # rather than riding along with the read-only page.
     BILLING_CONTRACTS = "billing.contracts"
 
+    # Opening the billing service's directory: every account that pays, its
+    # communities, what comes next and what reconciliation found. Owners
+    # only: it names every paying customer at once, which no operator task
+    # needs. Read-only — acting on an account goes through the consoles and
+    # their grants.
+    BILLING_DIRECTORY = "billing.directory"
+
+    # Opening the billing service's Control: where the deployment's owners
+    # define its plans (the catalog, its words in each language, the prices
+    # that sell it), and later share them out to communities and answer their
+    # requests for more. Owners only: it changes what every community is sold
+    # and allowed.
+    BILLING_CONTROL = "billing.control"
+
     # Writing the notices every user of this deployment is shown (see
     # ``app.services.platform.announcements``). Product communication rather
     # than configuration, so it sits a rung below ``config.manage``: an
@@ -95,7 +113,11 @@ class Capability(str, Enum):
     DATA_BYPASS = "data.bypass"
 
     # Privileged Access Management (time-bound, per-guild grants).
+    #: Ask for a grant through request and approval. Which grants is
+    #: ``access.request_any``'s: without it, only a ``moderate`` one.
     ACCESS_REQUEST = "access.request"
+    #: Ask for any grant: read or read-write content, settings, billing.
+    ACCESS_REQUEST_ANY = "access.request_any"
     ACCESS_APPROVE = "access.approve"
 
     # App-wide configuration (OIDC, SMTP, branding, role labels). owner only.
@@ -113,21 +135,25 @@ class Capability(str, Enum):
 # not assume that — membership is explicit so the matrix can diverge later.
 _MEMBER: FrozenSet[Capability] = frozenset()
 
-_SUPPORT: FrozenSet[Capability] = _MEMBER | {
+# Moderation and nothing else: finding the account or community to act on,
+# acting on it, and asking for the ``moderate`` grant that reading held content
+# takes. No other grant — no settings, no billing, no plain read of a community.
+_MODERATOR: FrozenSet[Capability] = _MEMBER | {
     Capability.USERS_READ,
-    Capability.USERS_AGE_UNBLOCK,
-    Capability.ACCESS_REQUEST,
     Capability.COMMUNITIES_READ,
+    Capability.CONTENT_MODERATE,
+    Capability.COMMUNITIES_SUSPEND,
+    Capability.ACCESS_REQUEST,
+}
+
+_SUPPORT: FrozenSet[Capability] = _MODERATOR | {
+    Capability.USERS_AGE_UNBLOCK,
+    Capability.USERS_MANAGE,
+    Capability.ACCESS_REQUEST_ANY,
     Capability.BILLING_SUPPORT,
 }
 
-_MODERATOR: FrozenSet[Capability] = _SUPPORT | {
-    Capability.CONTENT_MODERATE,
-    Capability.USERS_MANAGE,
-    Capability.COMMUNITIES_SUSPEND,
-}
-
-_OPERATOR: FrozenSet[Capability] = _MODERATOR | {
+_OPERATOR: FrozenSet[Capability] = _SUPPORT | {
     Capability.COMMUNITIES_MANAGE,
     Capability.BILLING_INSIGHTS,
     Capability.BILLING_CONTRACTS,
@@ -143,19 +169,22 @@ _OWNER: FrozenSet[Capability] = (
     | {
         Capability.CONFIG_MANAGE,
         Capability.PLUGINS_MANAGE,
+        Capability.BILLING_DIRECTORY,
+        Capability.BILLING_CONTROL,
     }
 ) - {
     # Owners approve access requests; they don't go through the request→approve
     # flow for themselves — they reach a guild via the self-approved break-glass
     # path (``data.bypass`` + ``access.approve``), so ``access.request`` is dropped.
     Capability.ACCESS_REQUEST,
+    Capability.ACCESS_REQUEST_ANY,
 }
 
 
 ROLE_CAPABILITIES: dict[UserRole, FrozenSet[Capability]] = {
     UserRole.member: _MEMBER,
-    UserRole.support: _SUPPORT,
     UserRole.moderator: _MODERATOR,
+    UserRole.support: _SUPPORT,
     UserRole.operator: _OPERATOR,
     UserRole.owner: _OWNER,
 }
@@ -165,8 +194,8 @@ ROLE_CAPABILITIES: dict[UserRole, FrozenSet[Capability]] = {
 # service clamps each to its absolute ceiling; the request and break-glass forms
 # read the caller's figure from the server.
 ROLE_MAX_GRANT_MINUTES: dict[UserRole, int] = {
-    UserRole.support: 240,  # 4 hours
-    UserRole.moderator: 480,  # 8 hours
+    UserRole.moderator: 240,  # 4 hours
+    UserRole.support: 480,  # 8 hours
     UserRole.operator: 1440,  # 24 hours
     # Owners/operators reach a guild via the self-approved break-glass path
     # (``data.bypass``) rather than the request→approve flow; their cap applies
@@ -189,6 +218,21 @@ def roles_with_capability(capability: Capability) -> FrozenSet[UserRole]:
     return frozenset(
         role for role, caps in ROLE_CAPABILITIES.items() if capability in caps
     )
+
+
+def may_hold_grant(role: UserRole | str, purpose: str, level: str) -> bool:
+    """Whether someone at ``role`` may hold a grant of ``purpose`` at
+    ``level``: when asking for it, when it is approved, and each time it is
+    used. A ``moderate`` content grant is for those who moderate. Every other
+    grant is for those who may ask for any (``access.request_any``) or break
+    glass (``data.bypass``)."""
+    held = capabilities_for(UserRole(role))
+    if (
+        purpose == AccessGrantPurpose.content.value
+        and level == AccessLevel.moderate.value
+    ):
+        return Capability.CONTENT_MODERATE in held
+    return bool(held & {Capability.ACCESS_REQUEST_ANY, Capability.DATA_BYPASS})
 
 
 def standing_capabilities(role: UserRole, status: UserStatus) -> FrozenSet[Capability]:

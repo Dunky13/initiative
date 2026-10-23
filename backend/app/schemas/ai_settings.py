@@ -2,22 +2,31 @@
 
 AI config ownership is a single global mode (``platform`` or ``guild``, never
 both — like the auth posture). The mode's owner defines *connections* (the
-destination: provider, base_url, model, and a shared key); guild members attach
-their own key and pick a connection, but never set a destination.
+destination: provider, base_url, model, and its key). Members configure nothing.
 """
 
 from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict
 
 from app.schemas.base import RawTextStr, SanitizedBaseModel
 
 
 class AIProvider(str, Enum):
+    """Where a connection sends its requests. ``ollama`` and ``custom`` are
+    servers somebody runs, at the address the connection gives; the rest are
+    hosted services at their own (``app.services.ai_provider.PRESETS``)."""
+
     openai = "openai"
     anthropic = "anthropic"
+    gemini = "gemini"
+    deepseek = "deepseek"
+    groq = "groq"
+    xai = "xai"
+    together = "together"
+    openrouter = "openrouter"
     ollama = "ollama"
     custom = "custom"
 
@@ -41,6 +50,16 @@ class ConnectionScope(str, Enum):
 
 
 # --- Connections (owner-controlled destination) ------------------------------
+class AIConnectionCommunity(SanitizedBaseModel):
+    """A community an operator's connection serves. No name when the
+    community no longer exists."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    id: int
+    name: Optional[str] = None
+
+
 class AIConnectionResponse(SanitizedBaseModel):
     """A connection as seen by its owning admin. Never carries the key itself —
     only whether one is set."""
@@ -56,9 +75,13 @@ class AIConnectionResponse(SanitizedBaseModel):
     has_api_key: bool = False
     enabled: bool = True
     is_default: bool = False
-    # When false, members can't attach their own key — this connection uses its
-    # own shared key only.
-    allow_member_keys: bool = True
+    #: An operator's connection given to these communities serves only them;
+    #: with none, it serves every community no other connection is given to.
+    communities: list[AIConnectionCommunity] = []
+    #: The message code its last request failed with, and since when; none
+    #: once one succeeds.
+    last_error: Optional[str] = None
+    last_error_at: Optional[datetime] = None
 
 
 class AIConnectionCreate(SanitizedBaseModel):
@@ -69,7 +92,9 @@ class AIConnectionCreate(SanitizedBaseModel):
     api_key: Optional[RawTextStr] = None
     enabled: bool = True
     is_default: bool = False
-    allow_member_keys: bool = True
+    #: An operator's connection only. Giving it a community takes that
+    #: community from any other connection it was given to.
+    community_ids: list[int] = []
 
 
 class AIConnectionUpdate(SanitizedBaseModel):
@@ -80,7 +105,7 @@ class AIConnectionUpdate(SanitizedBaseModel):
     api_key: Optional[RawTextStr] = None
     enabled: Optional[bool] = None
     is_default: Optional[bool] = None
-    allow_member_keys: Optional[bool] = None
+    community_ids: Optional[list[int]] = None
 
 
 # --- Platform mode (operator-set, on app_settings) ---------------------------
@@ -92,83 +117,6 @@ class PlatformAIModeResponse(SanitizedBaseModel):
 
 class PlatformAIModeUpdate(SanitizedBaseModel):
     mode: AIConfigMode
-
-
-# --- Member surface (attach a key + pick a connection) -----------------------
-class MemberAIConnectionView(SanitizedBaseModel):
-    """A connection available to a member in the active mode. No key material —
-    only whether the member has attached their own key, and whether it's
-    selected. ``requires_member_key`` is true when the connection has no shared
-    key of its own (the member must supply one)."""
-
-    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
-
-    scope: ConnectionScope
-    id: int
-    label: str
-    provider: AIProvider
-    model: Optional[str] = None
-    has_member_key: bool = False
-    requires_member_key: bool = False
-    # Whether the member may attach their own key to this connection.
-    allow_member_keys: bool = True
-    is_selected: bool = False
-
-
-class CommunityMemberAIKey(SanitizedBaseModel):
-    """That a member gave one of the community's AI connections a key, as the
-    seat sees it. Never the key."""
-
-    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
-
-    user_id: int
-    connection_id: int
-    updated_at: datetime
-
-
-class MemberAIView(SanitizedBaseModel):
-    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
-
-    mode: AIConfigMode = AIConfigMode.disabled
-    enabled: bool = False
-    connections: list[MemberAIConnectionView] = []
-
-
-class MyAIConnectionRow(SanitizedBaseModel):
-    """One connection available to the member in one guild — a flat row for the
-    cross-guild personal "My AI" view (``GET /me/ai``). Every connection the
-    member can use is listed, including shared-key ones they can't attach to
-    (``allow_member_keys=false``), so they can see what they have access to.
-    Writes stay guild-scoped, addressed by ``guild_id`` + ``scope`` +
-    ``connection_id`` (mirrors the My Tasks / My Trash pattern)."""
-
-    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
-
-    community_id: int = Field(validation_alias=AliasChoices("community_id", "guild_id"))
-    community_name: str = Field(
-        validation_alias=AliasChoices("community_name", "guild_name")
-    )
-    scope: ConnectionScope
-    connection_id: int
-    label: str
-    provider: AIProvider
-    model: Optional[str] = None
-    allow_member_keys: bool = True
-    has_member_key: bool = False
-    requires_member_key: bool = False
-    is_selected: bool = False
-
-
-class MemberAIKeyUpdate(SanitizedBaseModel):
-    scope: ConnectionScope
-    connection_id: int
-    api_key: RawTextStr
-
-
-class MemberAIPrefUpdate(SanitizedBaseModel):
-    scope: ConnectionScope
-    connection_id: int
-    enabled: bool = True
 
 
 # --- Resolved (final computed, used internally) ------------------------------

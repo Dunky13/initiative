@@ -222,7 +222,7 @@ def tag_counts_for(spec: TagLinkSpec, entity_ids: Select) -> Select:
 # ---------------------------------------------------------------------------
 
 
-async def _tags_for(
+async def tags_for(
     session: AsyncSession, spec: TagLinkSpec, entity_ids: Sequence[int]
 ) -> dict[int, list[Tag]]:
     """Live tags of many entities of one kind, in two queries whatever the page.
@@ -275,7 +275,7 @@ async def annotate_tags(session: AsyncSession, entities: Iterable[SQLModel]) -> 
     if not rows:
         return
     spec = spec_for(rows[0])
-    grouped = await _tags_for(session, spec, [row.id for row in rows])
+    grouped = await tags_for(session, spec, [row.id for row in rows])
     for row in rows:
         object.__setattr__(row, "tags", tag_summaries(grouped.get(row.id, [])))
 
@@ -284,7 +284,7 @@ async def active_tag_ids(
     session: AsyncSession, spec: TagLinkSpec, entity_id: int
 ) -> list[int]:
     """Tag ids assigned to the entity whose tag is still active."""
-    grouped = await _tags_for(session, spec, [entity_id])
+    grouped = await tags_for(session, spec, [entity_id])
     return [tag.id for tag in grouped.get(entity_id, []) if tag.id is not None]
 
 
@@ -401,7 +401,7 @@ async def copy_entity_tags(
     """Copy assignments from each source entity to its copy
     (``{source_id: target_id}``), dropping any whose tag has been trashed. Two
     queries however many entities are copied. Does not commit."""
-    grouped = await _tags_for(session, spec, list(copies))
+    grouped = await tags_for(session, spec, list(copies))
     session.add_all(
         _new_edge(spec, copies[source_id], tag.id)
         for source_id, tags in grouped.items()

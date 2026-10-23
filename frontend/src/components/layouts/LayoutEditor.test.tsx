@@ -17,6 +17,7 @@ import {
   buildTask,
   buildTaskListResponse,
   buildToolLayoutSet,
+  TASK_GROUPINGS,
 } from "@/__tests__/factories";
 import { communityHttp } from "@/__tests__/helpers/communityHttp";
 import { server } from "@/__tests__/helpers/msw-server";
@@ -29,17 +30,28 @@ import {
   type ToolLayoutSetRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { instanceTarget, sharedTarget, useToolLayouts } from "@/hooks/useToolLayouts";
-import { SHIPPED_GROUPINGS } from "@/lib/layouts/grouping";
 import { MAX_PRESETS } from "@/lib/layouts/presets";
 import { TASK_COLUMNS } from "@/lib/layouts/tasks";
 import type { LayoutNode } from "@/lib/layouts/tree";
 
-import { calendarPresets, eventDetail, taskDetail, taskPresets } from "./details";
+import { calendarPresets, eventDetail, taskDetails, taskPresets } from "./details";
 import { LayoutEditor } from "./LayoutEditor";
 
 const STATUSES = buildDefaultTaskStatuses(1);
-const PROJECT = { id: 1, initiativeId: 1, statuses: STATUSES };
-const PROJECT_DETAILS = [taskDetail(PROJECT)];
+const TASK_TYPE = {
+  id: 1,
+  project_id: 1,
+  name: "Task",
+  position: 0,
+  is_default: true,
+  hidden: false,
+  color: "#94A3B8",
+  icon: "square-check",
+  layout_preset: "plain",
+  starting_values: null,
+};
+const PROJECT = { id: 1, initiativeId: 1, statuses: STATUSES, types: [TASK_TYPE] };
+const PROJECT_DETAILS = taskDetails(PROJECT);
 const CALENDAR_DETAILS = [eventDetail(1)];
 const PROJECT_PRESETS = taskPresets(PROJECT);
 const CALENDAR_PRESETS = calendarPresets(1);
@@ -97,6 +109,8 @@ const canvas = () => screen.findByRole("region", { name: /preview/i });
 beforeEach(() => {
   sent = [];
   server.use(
+    // Ahead of the one task, which its path would otherwise match.
+    communityHttp.get("/tasks/groups", () => HttpResponse.json({ groups: [], rows: {} })),
     communityHttp.get("/tasks/:taskId", () =>
       HttpResponse.json({
         ...buildTask({
@@ -129,8 +143,9 @@ beforeEach(() => {
       sent.push({ save: body });
       return HttpResponse.json(buildSavedLayoutSet(buildToolLayoutSet(), body));
     }),
-    communityHttp.delete("/layouts/:kind", ({ params }) => {
-      sent.push({ reset: String(params.kind) });
+    communityHttp.delete("/layouts/:kind", ({ params, request }) => {
+      const typed = new URL(request.url).searchParams.get("task_type_id");
+      sent.push({ reset: typed ? `${String(params.kind)}:${typed}` : String(params.kind) });
       return HttpResponse.json(buildToolLayoutSet());
     }),
     communityHttp.put("/layouts/default", async ({ request }) => {
@@ -261,14 +276,29 @@ describe("LayoutEditor", () => {
     expect(saved("table")?.columns).toEqual(TASK_COLUMNS);
   });
 
-  it("opens the project on the open list as a change of its own", async () => {
-    const { user } = editor("board");
+  it("shows a list, and opens the project on it, as changes of their own", async () => {
+    const { user } = editor("gantt", vi.fn(), buildToolLayoutSet({ hidden: ["gantt"] }));
     await outline();
 
+    // A hidden list is not one to open on, and the last one shown stays shown.
+    expect(screen.queryByRole("switch", { name: /opens first/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: /shown in the layout menu/i }));
     await user.click(screen.getByRole("switch", { name: /opens first/i }));
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
-    await waitFor(() => expect(sent).toEqual([{ opensOn: "board" }]));
+    await waitFor(() =>
+      expect(sent).toEqual([
+        { save: { kind: "gantt", definition: { hidden: false } } },
+        { opensOn: "gantt" },
+      ])
+    );
+  });
+
+  it("keeps the last list a project shows", async () => {
+    editor("board", vi.fn(), buildToolLayoutSet({ hidden: ["table", "gantt", "calendar"] }));
+    await outline();
+
+    expect(screen.getByRole("switch", { name: /shown in the layout menu/i })).toBeDisabled();
   });
 
   it("adds a preset to the open list beside the shipped ones, sorted as chosen", async () => {
@@ -310,6 +340,7 @@ describe("LayoutEditor", () => {
           {
             kind: "table",
             is_default: true,
+            hidden: false,
             definition: { presets },
             updated_at: "2026-10-01T12:00:00.000Z",
           },
@@ -358,13 +389,21 @@ describe("LayoutEditor", () => {
 
     await waitFor(() => expect(saved("table")).toBeDefined());
     expect(saved("table")?.groupings).toEqual([
-      ...SHIPPED_GROUPINGS.map((field) => ({ field })),
+      ...TASK_GROUPINGS.filter((entry) => !entry.bucket).map((entry) => ({ field: entry.name })),
       { field: "property:12" },
     ]);
     expect(saved("table")?.group_by).toBe("property:12");
   });
 
   it("leaves out a group clicked above the grouped preview", async () => {
+    server.use(
+      communityHttp.get("/tasks/groups", () =>
+        HttpResponse.json({
+          groups: STATUSES.map((status) => ({ key: String(status.id), label: status.name })),
+          rows: {},
+        })
+      )
+    );
     const { user } = editor(
       "table",
       vi.fn(),
@@ -373,7 +412,8 @@ describe("LayoutEditor", () => {
           {
             kind: "table",
             is_default: true,
-            definition: { group_by: "status" },
+            hidden: false,
+            definition: { group_by: "task_status_id" },
             updated_at: "2026-10-01T12:00:00.000Z",
           },
         ],
@@ -388,7 +428,7 @@ describe("LayoutEditor", () => {
 
     await waitFor(() => expect(saved("table")).toBeDefined());
     const groupings = saved("table")?.groupings as { field: string; hidden?: string[] }[];
-    expect(groupings.find((entry) => entry.field === "status")?.hidden).toEqual([
+    expect(groupings.find((entry) => entry.field === "task_status_id")?.hidden).toEqual([
       String(STATUSES[2].id),
     ]);
   });
@@ -592,11 +632,10 @@ describe("LayoutEditor", () => {
 
       await waitFor(() => expect(sent).toHaveLength(1));
       const card = saved("board")?.card;
-      expect(
-        (
-          (card as LayoutNode | undefined)?.children?.[0] as LayoutNode | undefined
-        )?.children?.slice(0, 2)
-      ).toEqual([
+      // Into the row the title shares with its type's icon.
+      const first = (card as LayoutNode | undefined)?.children?.[0] as LayoutNode | undefined;
+      expect((first?.children?.[0] as LayoutNode | undefined)?.children).toEqual([
+        { type: "field", props: { field: "type" } },
         { type: "field", props: { field: "priority" } },
         { type: "field", props: { field: "title" } },
       ]);
@@ -605,7 +644,7 @@ describe("LayoutEditor", () => {
 
   describe("the task's detail", () => {
     it("hides a field taken off it, and stores the layout whole", async () => {
-      const { user } = editor("task");
+      const { user } = editor("task:1");
       expect(await within(await canvas()).findByDisplayValue("Draw the map")).toBeInTheDocument();
 
       await user.click(within(await outline()).getByRole("button", { name: /^hide tags$/i }));
@@ -628,7 +667,7 @@ describe("LayoutEditor", () => {
           );
         })
       );
-      const { user } = editor("task");
+      const { user } = editor("task:1");
 
       await user.click(
         await within(await outline()).findByRole("button", { name: "Side", pressed: false })
@@ -651,7 +690,7 @@ describe("LayoutEditor", () => {
     });
 
     it("places a property on its own", async () => {
-      const { user } = editor("task");
+      const { user } = editor("task:1");
 
       await user.click(
         await within(await outline()).findByRole("button", { name: "Side", pressed: false })
@@ -672,7 +711,7 @@ describe("LayoutEditor", () => {
     });
 
     it("adds accordions where asked for, each named by typing over its title", async () => {
-      const { user } = editor("task");
+      const { user } = editor("task:1");
 
       await user.click(
         await within(await outline()).findByRole("button", { name: "Side", pressed: false })
@@ -706,12 +745,14 @@ describe("LayoutEditor", () => {
 
     it("goes back to the shipped layout", async () => {
       const { user } = editor(
-        "task",
+        "task:1",
         vi.fn(),
         buildToolLayoutSet({
           layouts: [
             {
               kind: "task",
+              task_type_id: 1,
+              task_type_name: "Task",
               definition: { main: [{ type: "comments" }] },
               updated_at: "2026-10-01T12:00:00.000Z",
             },
@@ -722,7 +763,7 @@ describe("LayoutEditor", () => {
       await user.click(await screen.findByRole("button", { name: /use the shipped layout/i }));
       await user.click(screen.getByRole("button", { name: /^save$/i }));
 
-      await waitFor(() => expect(sent).toEqual([{ reset: "task" }]));
+      await waitFor(() => expect(sent).toEqual([{ reset: "task:1" }]));
     });
   });
 

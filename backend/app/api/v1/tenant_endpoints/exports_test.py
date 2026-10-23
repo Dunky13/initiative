@@ -40,7 +40,7 @@ from app.models.tenant.export_job import ExportJob, ExportJobStatus
 from app.models.tenant.initiative import Initiative, InitiativeMember
 from app.models.tenant.property import PropertyType
 from app.models.tenant.resource_grant import ResourceAccessLevel, ResourceGrant
-from app.models.tenant.task import TaskStatusCategory
+from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.services import storage as storage_module
 from app.services.export import worker as export_worker
 from app.services.guild_sweeps import Scope, each_guild
@@ -343,14 +343,14 @@ async def _image_file(session, a, *, name: str, key: str):
 # Task exports
 # ---------------------------------------------------------------------------
 
-_TASK_COLUMNS = "Task,Project,Status,Priority,Due,Assignees"
+_TASK_COLUMNS = "Task,Assignees,Due,Priority,Status"
 
 _TASK_REPORTS: dict[str, dict[str, Any]] = {
     "pdf": {},
     "csv": {"present": (_TASK_COLUMNS, "Task 0", "Task 1")},
     "xlsx": {"disposition": ('filename="tasks.xlsx"',)},
     "md": {
-        "present": ("| Task | Project | Status | Priority | Due | Assignees |",),
+        "present": ("| Task | Assignees | Due | Priority | Status |",),
         "disposition": ('filename="tasks.md"',),
     },
 }
@@ -413,6 +413,251 @@ async def test_inline_export_respects_task_filters(
     resp = await _export(client, a, "tasks", conditions="not json")
     assert resp.status_code == 400
     assert resp.json()["detail"] == "QUERY_INVALID_CONDITIONS"
+
+
+async def test_task_export_of_a_selection_carries_only_those_tasks(
+    client: AsyncClient, acting_user, session
+):
+    """Export Selected names its tasks by id, as the list's own filter does."""
+    a = await _actor_with_tasks(acting_user, session, count=0)
+    picked = await create_task(session, a.project, title="Picked")
+    await create_task(session, a.project, title="Left out")
+    resp = await _export(
+        client,
+        a,
+        "tasks",
+        format="md",
+        conditions=json.dumps([{"field": "id", "op": "in_", "value": [picked.id]}]),
+    )
+    _assert_export(resp, "md", present=("Picked",), absent=("Left out",))
+
+
+def _grouped_rows(resp: Response) -> list[tuple[str, ...]]:
+    """A grouped markdown task table's (group, task) cells, in order."""
+    assert resp.status_code == 200, resp.text
+    return [
+        tuple(cell.strip() for cell in line.strip("|").split("|")[:2])
+        for line in resp.text.splitlines()
+        if line.startswith("| ") and not line.startswith("| ---")
+    ]
+
+
+async def test_task_export_grouped_by_tag_lists_a_task_under_each_tag(
+    client: AsyncClient, acting_user, session, monkeypatch
+):
+    """Grouped by tag, as the table shows it: a task under every tag it has,
+    the tags by name and the untagged last, each group in the list's order."""
+    a = await _actor_with_tasks(acting_user, session, count=0)
+    both = await create_task(session, a.project, title="Both")
+    one = await create_task(session, a.project, title="One")
+    await create_task(session, a.project, title="Neither")
+    beta = await create_tag(session, a.guild, name="Beta")
+    alpha = await create_tag(session, a.guild, name="alpha")
+    for task, tag in ((both, beta), (both, alpha), (one, alpha)):
+        await assign_tag(session, task, tag)
+    await session.commit()
+
+    resp = await _export(client, a, "tasks", format="md", group_by="tag_ids")
+    assert _grouped_rows(resp) == [
+        ("Tags", "Task"),
+        ("alpha", "Both"),
+        ("alpha", "One"),
+        ("Beta", "Both"),
+        ("Untagged", "Neither"),
+    ]
+    # The groups the view leaves out stay out of its export.
+    resp = await _export(
+        client,
+        a,
+        "tasks",
+        format="md",
+        group_by="tag_ids",
+        hidden_groups=[str(alpha.id), ""],
+    )
+    assert _grouped_rows(resp)[1:] == [("Beta", "Both")]
+
+    # Three tasks are four rows grouped, and the ceiling counts the rows.
+    monkeypatch.setattr(export_limits, "EXPORT_MAX_ROWS", 3)
+    resp = await _export(client, a, "tasks", format="md", group_by="tag_ids")
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "EXPORT_TOO_LARGE"
+
+
+async def test_task_export_groups_by_each_kind_of_field(
+    client: AsyncClient, acting_user, session
+):
+    """An enum by its own order (priority most urgent first), people through
+    the relation that reaches them, the date window by its buckets, and a
+    property by its options."""
+    a = await _actor_with_tasks(acting_user, session, count=0)
+    b = await acting_user(
+        guild_role=CommunityRole.member, guild=a.guild, initiative=a.initiative
+    )
+    a.membership.display_name = "Zed"
+    b.membership.display_name = "Amy"
+    session.add_all([a.membership, b.membership])
+    region = await create_property_definition(
+        session,
+        a.initiative,
+        name="Region",
+        type=PropertyType.select,
+        options=[
+            {"value": "north", "label": "North"},
+            {"value": "south", "label": "South"},
+        ],
+    )
+    now = datetime.now(timezone.utc)
+    late = await create_task(
+        session,
+        a.project,
+        title="Late",
+        priority=TaskPriority.low,
+        due_date=now - timedelta(days=2),
+        assignees=[a.user],
+    )
+    soon = await create_task(
+        session,
+        a.project,
+        title="Soon",
+        priority=TaskPriority.urgent,
+        due_date=now + timedelta(days=3),
+        assignees=[a.user, b.user],
+    )
+    await create_property_value(session, late, region, value_text="south")
+    await create_property_value(session, soon, region, value_text="north")
+
+    expected = {
+        "priority": [("Urgent", "Soon"), ("Low", "Late")],
+        "assignee_ids": [("Amy", "Soon"), ("Zed", "Late"), ("Zed", "Soon")],
+        "date_group": [("Overdue", "Late"), ("This week", "Soon")],
+        f"property:{region.id}": [("North", "Soon"), ("South", "Late")],
+    }
+    for field, rows in expected.items():
+        resp = await _export(client, a, "tasks", format="md", group_by=field)
+        assert _grouped_rows(resp)[1:] == rows, field
+
+    # A date by a bucket of the calendar, named by its first day.
+    resp = await _export(
+        client, a, "tasks", format="md", group_by="due_date", bucket="year"
+    )
+    assert [group for group, _ in _grouped_rows(resp)[1:]] == [
+        str((now - timedelta(days=2)).year),
+        str((now + timedelta(days=3)).year),
+    ]
+
+
+async def test_task_export_shows_the_columns_its_view_shows(
+    client: AsyncClient, acting_user, session
+):
+    """The layout fields the view's table shows, in its order, a property by
+    its name and value; recurrence, which only the app writes in words, and a
+    property the community no longer has are left out; the status comes last,
+    as the table draws it."""
+    a = await _actor_with_tasks(acting_user, session, count=0)
+    effort = await create_property_definition(
+        session,
+        a.initiative,
+        name="Effort",
+        type=PropertyType.select,
+        options=[{"value": "big", "label": "Big"}],
+    )
+    task = await create_task(
+        session, a.project, title="Map", priority=TaskPriority.high
+    )
+    await create_property_value(session, task, effort, value_text="big")
+
+    resp = await _export(
+        client,
+        a,
+        "tasks",
+        format="md",
+        # The longest id a layout can name: an install's field it no longer
+        # declares, which is left out rather than refused.
+        columns=[
+            "priority",
+            f"property:{effort.id}",
+            "recurrence",
+            "property:999",
+            f"plugin:9999999999:{'k' * 64}",
+        ],
+    )
+    _assert_export(
+        resp,
+        "md",
+        present=(
+            "| Task | Priority | Effort | Status |",
+            "| Map | High | Big | To Do |",
+        ),
+    )
+
+
+async def test_detailed_task_export_follows_the_task_page(
+    client: AsyncClient, acting_user, session
+):
+    """Each page draws the task page's parts in its order: a property placed
+    on the page, then the description with its mentions named."""
+    a = await _actor_with_tasks(acting_user, session, count=0)
+    a.membership.display_name = "Ada"
+    session.add(a.membership)
+    effort = await create_property_definition(
+        session, a.initiative, name="Effort", type=PropertyType.text
+    )
+    task = await create_task(
+        session,
+        a.project,
+        title="Map",
+        description=f"Pair with @[]({a.user.id})",
+    )
+    await create_property_value(session, task, effort, value_text="Large")
+
+    resp = await _export(
+        client,
+        a,
+        "tasks",
+        format="pdf",
+        layout="detailed",
+        detail=[f"property:{effort.id}", "description", "status"],
+    )
+    assert resp.status_code == 200, resp.text
+    page = " ".join(_pdf_pages(resp)[0].split())
+    assert page.index("Effort: Large") < page.index("Description")
+    assert page.index("Description") < page.index("Status:")
+    assert "Pair with @Ada" in page and "](" not in page
+
+
+async def test_project_report_shows_the_columns_its_view_shows(
+    client: AsyncClient, acting_user, session
+):
+    a = await _actor_with_tasks(acting_user, session, count=1)
+    resp = await _export(
+        client,
+        a,
+        "project",
+        ids=[a.project.id],
+        format="csv",
+        filters=json.dumps({"tasks": {"columns": ["priority"]}}),
+    )
+    _assert_export(resp, "csv", present=("Task,Priority,Status", "Task 0,Medium,To Do"))
+
+
+async def test_detailed_task_export_names_each_task_page_by_its_group(
+    client: AsyncClient, acting_user, session
+):
+    a = await _actor_with_tasks(acting_user, session, count=1)
+    resp = await _export(
+        client, a, "tasks", format="pdf", layout="detailed", group_by="priority"
+    )
+    assert resp.status_code == 200, resp.text
+    assert "Priority: Medium" in _pdf_pages(resp)[0]
+
+
+async def test_task_export_refuses_a_field_that_does_not_group(
+    client: AsyncClient, acting_user, session
+):
+    a = await _actor_with_tasks(acting_user, session)
+    resp = await _export(client, a, "tasks", format="md", group_by="title")
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "EXPORT_INVALID_PARAMS"
 
 
 async def test_export_max_rows_bound(
@@ -609,7 +854,7 @@ async def test_inline_project_export_returns_envelope(
 # What each report format carries beyond the task titles all of them render.
 _PROJECT_REPORTS: dict[str, tuple[str, ...]] = {
     "pdf": (),
-    "csv": ("Task,Status,Priority,Due,Assignees",),
+    "csv": ("Task,Assignees,Due,Priority,Status",),
     "xlsx": (),
 }
 
@@ -1755,11 +2000,11 @@ async def test_task_export_localizes_report_content(
     a = await _actor_with_tasks(acting_user, session, count=1)
     await _set_locale(session, a.user, "es")
 
-    # Spanish headers, not "Task,Project,Status,...".
+    # Spanish headers, not "Task,Assignees,...".
     _assert_export(
         await _export(client, a, "tasks", format="csv"),
         "csv",
-        present=("Tarea,Proyecto,Estado,Prioridad,Vence,Asignados",),
+        present=("Tarea,Asignados,Vence,Prioridad,Estado",),
     )
     _assert_export(
         await _export(client, a, "tasks", format="md"),

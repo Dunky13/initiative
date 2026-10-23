@@ -10,7 +10,6 @@ import type {
   TaskListResponse,
 } from "@/api/generated/initiativeAPI.schemas";
 import { getListMyTasksQueryKey, listMyTasks } from "@/api/generated/tasks/tasks";
-import { CALENDAR_VIEW_MODE_KEY } from "@/components/calendar";
 import { useTaskColumnLimits } from "@/hooks/useColumnLimits";
 import { useCommunities } from "@/hooks/useCommunities";
 import { deviceJSON, LIST, type ListViewSpec, useListView, viewKey } from "@/hooks/useListView";
@@ -54,12 +53,11 @@ const sameMembers = <T>(a: T[], b: T[]): boolean =>
   a.length === b.length && new Set(a).size === new Set([...a, ...b]).size;
 
 /**
- * Where one person's view of My Tasks is kept: table or calendar, the
- * calendar's month or week, their filters, and the table's sort, grouping and
- * columns (date window and community hidden, grouped by date window, until
- * they change them). What an older release kept (filters and sort as one
- * preference, grouping and columns on the device, the month or week every
- * calendar shared) is carried over.
+ * Where one person's view of My Tasks is kept: their filters, and the table's
+ * sort, grouping and columns (date window and community hidden, grouped by
+ * date window, until they change them). What an older release kept (filters
+ * and sort as one preference, grouping and columns on the device) is carried
+ * over.
  */
 export const MY_TASKS_VIEW: ListViewSpec<TaskFilterSpec> = {
   key: viewKey("me", "tasks"),
@@ -76,13 +74,11 @@ export const MY_TASKS_VIEW: ListViewSpec<TaskFilterSpec> = {
       | undefined;
     const table = deviceJSON("initiative-my-tasks-table") as { grouping?: unknown } | null;
     const columns = deviceJSON("initiative-my-tasks-columns");
-    const mode = items[CALENDAR_VIEW_MODE_KEY];
-    if (!old && !table && !columns && typeof mode !== "string") return null;
+    if (!old && !table && !columns) return null;
     const sorting = old?.sorting;
     // What was never kept reads as the default, as it did then.
     const filters = old ? { ...FILTER_DEFAULTS, ...fromOldNames(old) } : {};
     return {
-      mode: typeof mode === "string" ? mode : null,
       parts: {
         [LIST]: {
           ...(old ? { filters } : {}),
@@ -97,7 +93,16 @@ export const MY_TASKS_VIEW: ListViewSpec<TaskFilterSpec> = {
 
 const PAGE_SIZE = 20;
 
-export function useGlobalTasksTable() {
+/** Filters kept somewhere of the caller's own (a home widget's options) in
+ *  place of the reader's view. */
+export interface OwnTaskFilters {
+  /** What was kept, or `undefined` while nothing has been: the reader's view
+   *  shows until then. */
+  stored: unknown;
+  onChange: (next: TaskFilterSpec) => void;
+}
+
+export function useGlobalTasksTable(own?: OwnTaskFilters) {
   const { t } = useTranslation(["tasks", "dates", "common"]);
   const { activeCommunityId } = useCommunities();
   const localQueryClient = useQueryClient();
@@ -109,10 +114,19 @@ export function useGlobalTasksTable() {
   // --- This person's view of My Tasks: their filters and the table's sort ---
   const view = useListView(MY_TASKS_VIEW);
   const preferencesLoaded = view.loaded;
-  const filters = view.filters;
+  const ownStored = own?.stored;
+  const ownFilters = useMemo(
+    () => (ownStored !== undefined ? readMyTasksFilters(ownStored) : null),
+    [ownStored]
+  );
+  const filters = ownFilters ?? view.filters;
   const sorting = useMemo(() => taskSortFields(view.sorting), [view.sorting]);
   const { setFilters: keepFilters, setSorting: keepSorting } = view;
-  const setFilters = useCallback((next: TaskFilterSpec) => keepFilters(next), [keepFilters]);
+  const keepOwn = own?.onChange;
+  const setFilters = useCallback(
+    (next: TaskFilterSpec) => (keepOwn ? keepOwn(next) : keepFilters(next)),
+    [keepOwn, keepFilters]
+  );
 
   // Closed until asked for. The filter button carries a count of what's set, so
   // a narrowed list still says so with the panel shut.
@@ -128,8 +142,12 @@ export function useGlobalTasksTable() {
       : filters.status_categories,
   });
 
-  /** Back to what someone who narrowed nothing sees. */
-  const clearFilters = useCallback(() => keepFilters(null), [keepFilters]);
+  /** Back to what someone who narrowed nothing sees. Kept filters of the
+   *  caller's own say so outright, rather than falling back to the view's. */
+  const clearFilters = useCallback(
+    () => (keepOwn ? keepOwn(FILTER_DEFAULTS) : keepFilters(null)),
+    [keepOwn, keepFilters]
+  );
 
   // --- Pagination state ---
   const [page, setPageState] = useState(() => searchParams.page ?? 1);

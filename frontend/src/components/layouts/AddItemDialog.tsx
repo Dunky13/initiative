@@ -71,10 +71,19 @@ export const AddItemDialog = <I extends Item, C, P, R extends { id: number }>({
   const changed = useRef(false);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* Its own container, so the detail's columns follow the dialog's
+          width rather than the screen's, as they follow the page area's on
+          the item's own page. */}
       <DialogContent
-        className="w-full rounded-2xl border bg-card shadow-2xl sm:max-w-3xl"
+        className="@container w-full rounded-2xl border bg-card shadow-2xl sm:max-w-5xl"
         onInteractOutside={(event) => {
           if (changed.current) event.preventDefault();
+        }}
+        // Escape in a field with a list open under it closes the list.
+        onEscapeKeyDown={(event) => {
+          if ((event.target as Element | null)?.closest?.("[data-picking]")) {
+            event.preventDefault();
+          }
         }}
       >
         <Adding {...props} changed={changed} />
@@ -110,7 +119,11 @@ const Adding = <I extends Item, C, P, R extends { id: number }>({
     values: new Map<number, unknown>(),
     holding: new Set<string>(),
   });
-  const layout = detailLayoutOf(useToolLayouts(layouts(item)).data, detail.spec.kind);
+  const layout = detailLayoutOf(
+    useToolLayouts(layouts(item)).data,
+    detail.spec.kind,
+    detail.typed?.typeOf(item)
+  );
   const home = detail.home(item, context);
   const target = home.links.target;
   const setLinksOn = useSetItemLinks(home.canOpen.tool, home.canOpen.id);

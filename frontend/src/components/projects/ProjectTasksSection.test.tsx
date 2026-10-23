@@ -1,7 +1,7 @@
 /**
  * How a project's tasks are shown, and what a link to them means.
  *
- * A project draws its tasks in its layouts (a table, a board, a calendar); what
+ * A project draws its tasks in its layouts (a table, a board, a Gantt); what
  * one person narrows the list to and how they sort it are theirs, kept per
  * layout in their view of the project. These cover choosing a layout (which
  * writes it to the URL, so it is linkable), a person's own filters and sort,
@@ -76,7 +76,7 @@ const withTags = (ids: number[]) => {
   );
 };
 
-/** The project's layouts, as shipped but for `overrides`. */
+/** A project's layouts, but for `overrides`. */
 const withLayouts = (overrides: Parameters<typeof buildToolLayoutSet>[0]) => {
   server.use(
     communityHttp.get("/layouts/", () =>
@@ -86,10 +86,30 @@ const withLayouts = (overrides: Parameters<typeof buildToolLayoutSet>[0]) => {
 };
 
 /** Seed this person's view of project 1. */
-const rememberView = (view: Record<string, unknown>) => {
+/** This person's view of project 1, in community 1: the layout they were
+ *  last in, and their filters and sort for each layout. */
+const rememberView = ({
+  layout,
+  filters = {},
+  sorting = {},
+}: {
+  layout: string;
+  filters?: Record<string, unknown>;
+  sorting?: Record<string, unknown>;
+}) => {
+  const kinds = [...new Set([...Object.keys(filters), ...Object.keys(sorting)])];
+  const parts = Object.fromEntries(
+    kinds.map((kind) => [
+      kind,
+      {
+        ...(filters[kind] !== undefined && { filters: filters[kind] }),
+        ...(sorting[kind] !== undefined && { sorting: sorting[kind] }),
+      },
+    ])
+  );
   server.use(
     http.get("/api/v1/user-view-preferences", () =>
-      HttpResponse.json({ items: { "project:1:views": view } })
+      HttpResponse.json({ items: { "view:1:project:1": { layout, mode: null, parts } } })
     )
   );
 };
@@ -149,14 +169,15 @@ const urlPreset = (router: ReturnType<typeof section>["router"]) =>
 
 beforeEach(() => {
   captureTaskRequests();
+  withLayouts({});
 });
 
 describe("ProjectTasksSection layouts", () => {
   it("offers the project's layouts, and opens on the one it opens on", async () => {
     withLayouts({
       layouts: [
-        { kind: "table", is_default: false, definition: {}, updated_at: null },
-        { kind: "board", is_default: true, definition: {}, updated_at: null },
+        { kind: "table", is_default: false, hidden: false, definition: {}, updated_at: null },
+        { kind: "board", is_default: true, hidden: false, definition: {}, updated_at: null },
       ],
     });
     const user = userEvent.setup();
@@ -168,6 +189,28 @@ describe("ProjectTasksSection layouts", () => {
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
       "Table",
       "Board",
+      "Gantt",
+      "Calendar",
+    ]);
+  });
+
+  it("offers a calendar a project shows, and draws its tasks on it", async () => {
+    withLayouts({
+      layouts: [
+        { kind: "table", is_default: false, hidden: false, definition: {}, updated_at: null },
+        { kind: "calendar", is_default: true, hidden: false, definition: {}, updated_at: null },
+      ],
+    });
+    const user = userEvent.setup();
+    section();
+
+    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent("Calendar"));
+    expect(await screen.findByRole("button", { name: "Today" })).toBeInTheDocument();
+    await user.click(await layoutSwitcher());
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Table",
+      "Board",
+      "Gantt",
       "Calendar",
     ]);
   });
@@ -204,6 +247,7 @@ describe("ProjectTasksSection layouts", () => {
         {
           kind: "table",
           is_default: true,
+          hidden: false,
           definition: { columns: ["priority", "title", "dueDate"] },
           updated_at: "2026-10-01T12:00:00.000Z",
         },
@@ -329,6 +373,7 @@ describe("ProjectTasksSection presets", () => {
         {
           kind: "table",
           is_default: true,
+          hidden: false,
           definition: {
             presets: [
               {
@@ -455,16 +500,6 @@ describe("ProjectTasksSection a person's filters", () => {
           parts: { table: expect.not.objectContaining({ filters: expect.anything() }) },
         })
       )
-    );
-  });
-
-  it("reads filters an older release kept, by the view they were set on", async () => {
-    rememberView({ view: "board", filters: { board: { assignees: ["me"] } } });
-    section();
-
-    await waitFor(async () => expect(await layoutSwitcher()).toHaveTextContent(/Board/));
-    await waitFor(() =>
-      expect(lastConditions).toContainEqual({ field: "assignee_ids", op: "in_", value: ["me"] })
     );
   });
 
@@ -606,9 +641,12 @@ describe("ProjectTasksSection ticking tasks off", () => {
     replies = [];
     vi.mocked(fireTaskCompletionFeedback).mockClear();
     // The table is virtualized, and jsdom gives every element a zero height,
-    // which windows it down to no rows at all.
+    // which windows it down to no rows at all. The virtualizer sizes its
+    // scroll element by its client box and each row by its offset box.
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1200);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
   });
 
   it("ticks the box and celebrates before the server answers", async () => {
@@ -694,9 +732,12 @@ describe("ProjectTasksSection ticking tasks off", () => {
 describe("ProjectTasksSection table", () => {
   beforeEach(() => {
     // The table is virtualized, and jsdom gives every element a zero height,
-    // which windows it down to no rows at all.
+    // which windows it down to no rows at all. The virtualizer sizes its
+    // scroll element by its client box and each row by its offset box.
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1200);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
   });
 
   it("draws a row from the task's fields, as the board's card does", async () => {

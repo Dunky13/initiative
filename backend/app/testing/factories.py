@@ -17,11 +17,13 @@ the fail-closed flush router in ``schema_harness``.
 """
 
 import base64
+import functools
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from jwt.algorithms import OKPAlgorithm
 from sqlalchemy import delete as sa_delete
@@ -108,8 +110,20 @@ from app.schemas.tenant.task import mint_checklist_item_id
 from app.services.tenant.ownership import tool_for_row
 from app.services.tenant.task_completion import sync_completed_at
 from app.services.tenant.task_statuses import ensure_default_statuses
+from app.services.tenant.task_types import ensure_default_types
 from app.services.tenant.names import slugify
 from app.testing.schema_harness import guild_of, route_session_to_guild
+
+
+@functools.cache
+def _default_password_hash() -> str:
+    """The hash of ``testpassword123``, worked out once per process.
+
+    argon2id is slow on purpose, and nearly every test makes accounts with this
+    password, so hashing it per account was a measurable share of the suite.
+    Every account sharing one hash still signs in with the password.
+    """
+    return get_password_hash("testpassword123")
 
 
 async def create_user(
@@ -155,7 +169,7 @@ async def create_user(
         # not about the age gate should never meet it. The gate's own tests
         # pass ``age_confirmed_at=None`` to get an account that has not.
         "age_confirmed_at": datetime.now(timezone.utc),
-        "hashed_password": get_password_hash("testpassword123"),
+        "hashed_password": _default_password_hash(),
         "role": UserRole.member,
         "status": UserStatus.active,
         "week_starts_on": 0,
@@ -707,6 +721,9 @@ async def create_project(
         await create_resource_grant(
             session, project, level=ResourceAccessLevel.owner, user=owner
         )
+        # Every project has its task types from the moment it is made.
+        await ensure_default_types(session, project.id, locale="en")
+        await session.commit()
 
     return project
 
@@ -778,7 +795,7 @@ async def create_task(
     """
     await route_session_to_guild(session, guild_of(project))
 
-    statuses = await ensure_default_statuses(session, project.id)
+    statuses = await ensure_default_statuses(session, project.id, locale="en")
     status = next((s for s in statuses if s.category == status_category), None)
     if status is None:
         status = await create_task_status(
@@ -786,10 +803,12 @@ async def create_task(
         )
         await session.flush()
 
+    types = await ensure_default_types(session, project.id, locale="en")
     defaults: dict[str, Any] = {
         "title": title or f"Test Task {datetime.now(timezone.utc).timestamp()}",
         "project_id": project.id,
         "task_status_id": status.id,
+        "task_type_id": next(t for t in types if t.is_default).id,
         "priority": TaskPriority.medium,
     }
     task = Task(**{**defaults, **overrides})
@@ -1487,6 +1506,15 @@ async def create_listing_with_terms(
 #: The key test entitlement statements are signed with. Nothing here verifies
 #: the signature (the plug-in does), so one key serves every test.
 _STATEMENT_KEY = ed25519.Ed25519PrivateKey.generate()
+#: The public half of the key :func:`entitlement_statement` signs with: what
+#: a test sets ``BILLING_STATEMENT_PUBLIC_KEY_PEM`` to.
+STATEMENT_PUBLIC_PEM = (
+    _STATEMENT_KEY.public_key()
+    .public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    .decode()
+)
 
 
 def entitlement_statement(

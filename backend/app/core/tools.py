@@ -295,7 +295,7 @@ LAYOUT_TOOLS: tuple[Tool, ...] = LAYOUTS_PER_INSTANCE + LAYOUTS_SHARED
 # (``DETAIL_LAYOUTS``: a project's task, the calendar's event). A tool with none here yet stores
 # none. The list a target opens on is one more row (``LAYOUT_DEFAULT``).
 LIST_LAYOUTS: dict[Tool, tuple[str, ...]] = {
-    Tool.project: ("table", "board", "calendar"),
+    Tool.project: ("table", "board", "gantt", "calendar"),
     Tool.calendar: ("calendar",),
 }
 DETAIL_LAYOUTS: dict[Tool, tuple[str, ...]] = {
@@ -306,6 +306,9 @@ DETAIL_LAYOUTS: dict[Tool, tuple[str, ...]] = {
     Tool.counter_group: ("counter",),
     Tool.post: ("post",),
 }
+#: The details laid out once per type of item rather than once per target: a
+#: project's task page is one per task type (``tool_layouts.task_type_id``).
+TYPED_DETAILS: dict[Tool, str] = {Tool.project: "task"}
 #: The per-instance tools that lay out anything of their own, a list or an
 #: item: those an initiative's settings list.
 INSTANCE_LAYOUT_TOOLS: tuple[Tool, ...] = tuple(

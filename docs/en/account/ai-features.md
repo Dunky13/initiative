@@ -18,6 +18,10 @@ When AI is switched on, you'll see **Generate** options in a few places:
 
 You ask each time. Nothing writes itself while you're making tea.
 
+A task's description and checklist are written from the whole task, not just its title. That means its existing checklist (so you aren't offered "Book the hall" twice), the project it's in, the unfinished tasks linked to it, and its comments, newest first. A thread that has run to forty comments may not all fit. When that happens you're told how many were read, so the suggestion that ignores what Priya said on Tuesday comes with a reason.
+
+Nothing is saved until you say so. Checklist suggestions arrive ticked, and you untick what you don't want. A written description lands in your draft, and **Undo suggestion** puts back whatever you had before.
+
 ## Who sets it up
 
 Whoever runs the server decides who's in charge of AI, under **Settings → Platform → Integrations**. One of three, for the whole server:
@@ -28,32 +32,33 @@ Whoever runs the server decides who's in charge of AI, under **Settings → Plat
 | **Platform-managed** | The server's owner sets up the AI every community uses. |
 | **Community-managed** | Each community's [superadmin](../guides/communities.md#why-superadmin-is-separate) sets up its own, under **Community settings → Integrations**. |
 
-Never both. What they set up are **connections**: a provider, a model, and where the key comes from.
+Never both. What they set up are **connections**: a provider, a model and a key.
 
 | Provider | Notes |
 |---|---|
-| **OpenAI** | Needs an API key. |
-| **Anthropic** | Needs an API key. |
-| **Custom (OpenAI-compatible)** | Anything that speaks the OpenAI API, at an address the connection gives. |
-| **Ollama (Local)** | Models running on a machine of the server owner's. Only they can set one up. |
+| **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Groq**, **xAI**, **Together AI**, **OpenRouter** | Hosted services. Each needs an API key from that company. |
+| **OpenAI-compatible server** | Anything that speaks the OpenAI API, at the address the connection gives: vLLM, llama.cpp, LM Studio, LocalAI, or a gateway your company already runs. The key is optional. |
+| **Ollama** | Models on a machine of the server owner's. Only they can set one up. |
 
-Each connection gets its key one of two ways, decided by **Let members use their own API key**. Off, everybody uses one shared key that whoever made the connection supplied. On, there's no shared key and each person brings their own.
+The model comes from the provider's own list, so save the connection once and pick from what it offers. A connection without a model sits there doing nothing until somebody picks one, which is at least restful.
+
+Only the server's owner can point a connection at a machine on a private network, and only for Ollama or an OpenAI-compatible server.
+
+With more than one connection, everybody uses the one marked as the default. On a platform-managed server, the owner can also give a connection to particular communities. Those communities use it, on its own key, and nobody else does, which suits a company where each department pays from its own account.
+
+A connection's settings say when its requests are failing, and since when: out of credit, a spending limit reached, a key the provider refused. Whoever looks after it hears from settings before anyone has to ask.
+
+### Switching it off for one community
+
+A community's superadmin can turn AI off for that community alone, under **AI in this community** on the same settings page. Off, nothing from that community goes to any provider, whatever the server offers. The legal team's notes stay the legal team's.
 
 ## Your part
 
-**My Settings → AI** lists every connection open to you, grouped by community. The tab only appears when there's something there for you to use or set up.
-
-- **Pick one** for each community. It's marked **In use**. Pick nothing and you get whichever is marked the default.
-- **Add your key** where a connection says **Needs your key**. It belongs to that connection in that community, and nowhere else. Other admins can't reach it; the community's superadmin can see that you added one, and remove it.
-- **Test** checks the one you picked actually answers.
-
-![Personal AI settings](../images/account/ai-settings.png)
-
-The address and the model belong to the connection, so your key only ever goes where the connection sends it. A connection marked as using a shared key needs nothing from you at all, which is either a relief or an irritation depending entirely on your day.
+Nothing. There's no key to find, no form to fill in and no setting to get wrong. If the **Generate** buttons are there, somebody has already done the setting up, and the bill is theirs too.
 
 ## The privacy bit, which is genuinely worth reading
 
-AI features work by sending the relevant text — a task's details, a file's contents — to whichever provider is configured. That content **leaves your server** and goes to that company, under *their* terms.
+AI features work by sending the relevant text — a task with its comments and linked tasks, a file's contents — to whichever provider is configured. Only what you can open yourself is ever sent. That content **leaves your server** and goes to that company, under *their* terms.
 
 This is the one place in Initiative where your work deliberately goes somewhere else, so we'd rather be precise about it than reassuring:
 
@@ -63,7 +68,7 @@ This is the one place in Initiative where your work deliberately goes somewhere 
 Which is precisely why the buttons are explicit, why nothing generates on its own, and why the whole thing can be switched off.
 
 !!! tip "Want a hard guarantee? Keep it local."
-    Whoever runs your server can configure a **local** provider (Ollama). The text never leaves your server, so there's no third party's terms to read and nothing to take anyone's word for. If your group's work is the kind you wouldn't hand a stranger, this is the option to ask for.
+    Whoever runs your server can configure a **local** provider: Ollama, or an OpenAI-compatible server such as vLLM on their own machine. The text never leaves your server, so there's no third party's terms to read and nothing to take anyone's word for. If your group's work is the kind you wouldn't hand a stranger, this is the option to ask for.
 
 Not sure what's configured on your server? Ask a community admin or whoever runs the server — or simply never press the buttons. Everything else in Initiative works exactly the same without them, and nobody is keeping score.
 

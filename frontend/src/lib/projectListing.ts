@@ -16,11 +16,12 @@ import type {
   PropertyOption,
   PropertySummary,
   PropertyType,
+  RecurrenceStrategy,
   TaskListRead,
-  TaskListReadRecurrenceStrategy,
   TaskPriority,
   TaskStatusCategory,
   TaskStatusRead,
+  TaskTypeRead,
 } from "@/api/generated/initiativeAPI.schemas";
 import { defaultsForCategory } from "@/lib/taskStatusDefaults";
 import { markdownExcerpt } from "@/lib/text";
@@ -59,13 +60,26 @@ export interface ProjectListingTask {
   due_date?: string | null;
   completed_at?: string | null;
   recurrence?: string | Record<string, unknown> | null;
-  recurrence_strategy?: TaskListReadRecurrenceStrategy;
+  recurrence_strategy?: RecurrenceStrategy;
+  recurrence_limit?: number | null;
   recurrence_shift?: number;
   recurrence_occurrence_count?: number;
+  recurrence_anchor?: string | null;
+  recurrence_anchor_count?: number;
   position?: number;
   status_name: string;
+  type_name?: string | null;
   checklist: { text: string; done: boolean }[];
   properties: ProjectListingPropertyValue[];
+}
+
+export interface ProjectListingType {
+  name: string;
+  position: number;
+  is_default?: boolean;
+  color?: string | null;
+  icon?: string | null;
+  layout_preset?: string | null;
 }
 
 export interface ProjectListingEnvelope {
@@ -76,6 +90,8 @@ export interface ProjectListingEnvelope {
     properties?: ProjectListingPropertyValue[];
   };
   task_statuses: ProjectListingStatus[];
+  /** Absent from a listing published before task types existed. */
+  task_types?: ProjectListingType[];
   property_definitions: ProjectListingPropertyDefinition[];
   tasks: ProjectListingTask[];
 }
@@ -132,6 +148,7 @@ const shifted = (value: string | null | undefined, days: number): string | null 
 
 export interface ProjectListingBoard {
   taskStatuses: TaskStatusRead[];
+  taskTypes: TaskTypeRead[];
   groupedTasks: Record<number, TaskListRead[]>;
   propertyDefinitions: PropertyDefinitionRead[];
 }
@@ -168,6 +185,29 @@ export const projectListingBoard = (
       };
     });
 
+  // A listing without types is drawn as one type, which shows nothing.
+  const taskTypes: TaskTypeRead[] = [
+    ...(envelope.task_types?.length
+      ? envelope.task_types
+      : [{ name: "", position: 0, is_default: true }]),
+  ]
+    .sort((a, b) => a.position - b.position)
+    .map((type, index) => ({
+      id: index + 1,
+      project_id: 0,
+      name: type.name,
+      position: type.position,
+      is_default: type.is_default ?? false,
+      color: type.color ?? "#94A3B8",
+      icon: type.icon ?? "square-check",
+      layout_preset: type.layout_preset ?? "plain",
+      // A preview starts no tasks.
+      starting_values: null,
+    }));
+  const defaultType = taskTypes.find((type) => type.is_default) ?? taskTypes[0];
+  const typeOf = (name: string | null | undefined) =>
+    taskTypes.find((type) => type.name.toLowerCase() === (name ?? "").toLowerCase()) ?? defaultType;
+
   const propertyDefinitions: PropertyDefinitionRead[] = envelope.property_definitions.map(
     (definition, index) => ({
       id: index + 1,
@@ -203,9 +243,12 @@ export const projectListingBoard = (
     const status = taskStatuses.find((s) => s.name === task.status_name);
     if (!status) return;
     groupedTasks[status.id] ??= [];
+    const type = typeOf(task.type_name);
     groupedTasks[status.id].push({
       id: index + 1,
       project_id: 0,
+      task_type_id: type.id,
+      task_type: type,
       project_name: envelope.project.name,
       title: task.title,
       priority: task.priority,
@@ -215,8 +258,11 @@ export const projectListingBoard = (
       // A repeat published before RRULE keeps a shape the board does not read.
       recurrence: typeof task.recurrence === "string" ? task.recurrence : null,
       recurrence_strategy: task.recurrence_strategy ?? "fixed",
+      recurrence_limit: task.recurrence_limit ?? null,
       recurrence_shift: task.recurrence_shift ?? 0,
       recurrence_occurrence_count: task.recurrence_occurrence_count ?? 0,
+      recurrence_anchor: shifted(task.recurrence_anchor, shift),
+      recurrence_anchor_count: task.recurrence_anchor_count ?? 0,
       recurrence_until: null,
       description_excerpt: task.description ? markdownExcerpt(task.description) : null,
       has_description: Boolean(task.description),
@@ -247,5 +293,5 @@ export const projectListingBoard = (
   });
   for (const tasks of Object.values(groupedTasks)) tasks.sort((a, b) => a.position - b.position);
 
-  return { taskStatuses, groupedTasks, propertyDefinitions };
+  return { taskStatuses, taskTypes, groupedTasks, propertyDefinitions };
 };

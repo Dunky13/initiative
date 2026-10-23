@@ -1418,8 +1418,8 @@ class TestAStatementOverTheRows:
         assert response.status_code == 200, response.json()
         body = response.json()
         assert body["table"]["columns"] == [
-            {"name": "day", "type": "text", "grain": None},
-            {"name": "total", "type": "number", "grain": None},
+            {"name": "day", "type": "text", "grain": None, "date_only": False},
+            {"name": "total", "type": "number", "grain": None, "date_only": False},
         ]
         assert body["table"]["rows"] == [["mon", 7.0], ["tue", 5.0]]
 

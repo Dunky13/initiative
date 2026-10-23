@@ -1,11 +1,10 @@
 {
-  "signupNotice": "Al crear una cuenta aceptas los <termsLink>{{terms}}</termsLink> y la <privacyLink>{{privacy}}</privacyLink> de {{appName}}.",
-  "termsTitle": "Términos del servicio",
-  "privacyTitle": "Política de privacidad",
+  "signupNotice": "Al crear una cuenta aceptas estos documentos de {{appName}}:",
   "documentFallbackTitle": "Documento legal",
   "effective": "En vigor desde el {{date}}",
   "version": "Versión {{version}}",
   "unavailable": "Ahora mismo no se puede mostrar este documento. Vuelve a intentarlo en un momento.",
+  "readWhereKept": "Leerlo donde se guarda",
   "backToSignIn": "Volver a iniciar sesión",
   "acceptError": "No hemos podido registrarlo. Inténtalo de nuevo.",
   "accept": {

@@ -1,0 +1,106 @@
+{
+  "taskTypes": {
+    "defaults": {
+      "task": "Aufgabe",
+      "bug": "Fehler",
+      "idea": "Idee",
+      "milestone": "Meilenstein"
+    },
+    "gallery": {
+      "groups": {
+        "planning": "Planung",
+        "home": "Rund ums Haus",
+        "groups": "Gruppen und Ehrenamt",
+        "making": "Etwas erschaffen",
+        "learning": "Lernen"
+      },
+      "types": {
+        "milestone": {
+          "name": "Meilenstein",
+          "hint": "Ein Datum, das erreicht werden soll, und was vorher geschehen muss"
+        },
+        "event": {
+          "name": "Veranstaltung",
+          "hint": "Oder ein Auftritt, eine Sitzung, ein Treffen: ein Datum und ein Ort"
+        },
+        "appointment": {
+          "name": "Termin",
+          "hint": "Eine Zeit und ein Ort"
+        },
+        "chore": {
+          "name": "Hausarbeit",
+          "hint": "Etwas, das jede Woche wiederkommt"
+        },
+        "errand": {
+          "name": "Besorgung",
+          "hint": "Eine Liste zum Abarbeiten, wie der Einkauf"
+        },
+        "bill": {
+          "name": "Rechnung",
+          "hint": "Ein Betrag, der jeden Monat fällig ist"
+        },
+        "shift": {
+          "name": "Ehrenamtliche Schicht",
+          "hint": "Wann, wo und wer sich eingetragen hat"
+        },
+        "purchase": {
+          "name": "Anschaffung",
+          "hint": "Etwas zu kaufen: was es kostet und wo"
+        },
+        "question": {
+          "name": "Frage",
+          "hint": "Etwas, das besprochen wird, bis es eine Antwort gibt"
+        },
+        "idea": {
+          "name": "Idee",
+          "hint": "Etwas, worüber es sich nachzudenken lohnt"
+        },
+        "request": {
+          "name": "Anfrage",
+          "hint": "Etwas, worum jemand gebeten hat"
+        },
+        "bug": {
+          "name": "Fehler",
+          "hint": "Etwas, das kaputt ist"
+        },
+        "feature": {
+          "name": "Funktion",
+          "hint": "Etwas Neues zu bauen"
+        },
+        "art": {
+          "name": "Grafik",
+          "hint": "Ein Bild, ein Klang, ein Stück Gestaltung"
+        },
+        "playtest": {
+          "name": "Spieltest-Notiz",
+          "hint": "Was passiert ist, als jemand es gespielt hat"
+        },
+        "assignment": {
+          "name": "Hausaufgabe",
+          "hint": "Arbeit, die an einem Datum fällig ist"
+        },
+        "reading": {
+          "name": "Lektüre",
+          "hint": "Etwas zu lesen, und wo es zu finden ist"
+        }
+      },
+      "fields": {
+        "location": "Ort",
+        "link": "Link",
+        "amount": "Betrag",
+        "cost": "Kosten"
+      },
+      "outlines": {
+        "bug": "**Was ist passiert?**\n\n\n**Was hätte passieren sollen?**\n\n\n**Wie lässt es sich wiederholen?**\n\n",
+        "playtest": "**Wer hat gespielt, und welche Version?**\n\n\n**Was hat funktioniert?**\n\n\n**Was nicht?**\n\n"
+      }
+    }
+  },
+  "taskStatuses": {
+    "defaults": {
+      "todo": "Zu erledigen",
+      "inProgress": "In Arbeit",
+      "done": "Erledigt"
+    }
+  }
+}

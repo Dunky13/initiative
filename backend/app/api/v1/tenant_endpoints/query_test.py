@@ -11,16 +11,20 @@ from pathlib import Path
 
 
 from app.core.messages import QueryMessages
+from app.core.relationships import RelationshipType
+from app.core.search import SearchEntityType
 from app.db.session import routed_context
 from app.models.platform.guild import CommunityRole
 from app.services.fields.spec import FieldType
 from app.services.marketplace import builtin
+from app.services.tenant import relationships as relationships_service
 from app.services.tenant.dashboard_definition import WIDGET_SPECS
 from app.models.tenant.file import FileType
 from app.testing import (
     create_file,
     create_initiative_member,
     create_project,
+    create_relationship,
     create_task,
 )
 
@@ -34,7 +38,9 @@ async def test_a_member_can_run_a_query(client, acting_user):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["columns"] == [{"name": "n", "type": "number", "grain": None}]
+    assert body["columns"] == [
+        {"name": "n", "type": "number", "grain": None, "date_only": False}
+    ]
     assert body["truncated"] is False
 
 
@@ -47,8 +53,8 @@ async def test_the_rows_come_back_positionally(client, acting_user):
     )
     assert response.status_code == 200
     assert response.json()["columns"] == [
-        {"name": "a", "type": "number", "grain": None},
-        {"name": "b", "type": "number", "grain": None},
+        {"name": "a", "type": "number", "grain": None, "date_only": False},
+        {"name": "b", "type": "number", "grain": None, "date_only": False},
     ]
 
 
@@ -96,11 +102,37 @@ async def test_describing_a_statement_names_its_columns_and_types(client, acting
     )
     assert response.status_code == 200
     assert response.json()["columns"] == [
-        {"name": "name", "type": "text", "grain": None},
-        {"name": "created_at", "type": "date", "grain": None},
-        {"name": "archived_at", "type": "date", "grain": None},
-        {"name": "id", "type": "number", "grain": None},
+        {"name": "name", "type": "text", "grain": None, "date_only": False},
+        {"name": "created_at", "type": "date", "grain": None, "date_only": False},
+        {"name": "archived_at", "type": "date", "grain": None, "date_only": False},
+        {"name": "id", "type": "number", "grain": None, "date_only": False},
     ]
+
+
+async def test_calendar_date_kind_survives_describing_and_running(
+    client, session, acting_user
+):
+    actor = await acting_user(guild_role=CommunityRole.admin, initiative=True)
+    await create_project(session, actor.initiative, actor.user)
+    sql = (
+        "SELECT date '2026-08-03' AS day,"
+        " timestamp '2026-08-03 00:00:00' AS local_at,"
+        " timestamptz '2026-08-03T00:00:00Z' AS at FROM projects LIMIT 1"
+    )
+    for route in ("/query/describe", "/query"):
+        response = await client.post(
+            actor.g(route), json={"sql": sql}, headers=actor.headers
+        )
+        assert response.status_code == 200, response.text
+        assert [column["date_only"] for column in response.json()["columns"]] == [
+            True,
+            False,
+            False,
+        ]
+        if route == "/query":
+            assert response.json()["rows"] == [
+                [1785715200000, 1785715200000, 1785715200000]
+            ]
 
 
 async def test_a_closed_vocabulary_describes_as_one(client, acting_user):
@@ -115,7 +147,7 @@ async def test_a_closed_vocabulary_describes_as_one(client, acting_user):
     )
     assert response.status_code == 200
     assert response.json()["columns"] == [
-        {"name": "priority", "type": "enum", "grain": None}
+        {"name": "priority", "type": "enum", "grain": None, "date_only": False}
     ]
 
 
@@ -130,8 +162,8 @@ async def test_a_field_that_names_a_row_describes_as_a_reference(client, acting_
     )
     assert response.status_code == 200
     assert response.json()["columns"] == [
-        {"name": "project_id", "type": "reference", "grain": None},
-        {"name": "title", "type": "text", "grain": None},
+        {"name": "project_id", "type": "reference", "grain": None, "date_only": False},
+        {"name": "title", "type": "text", "grain": None, "date_only": False},
     ]
 
 
@@ -152,7 +184,7 @@ async def test_describing_runs_nothing(client, session, acting_user):
     )
     assert described.status_code == 200
     assert described.json()["columns"] == [
-        {"name": "n", "type": "number", "grain": None}
+        {"name": "n", "type": "number", "grain": None, "date_only": False}
     ]
     assert ran.status_code == 400
 
@@ -224,8 +256,8 @@ async def test_a_built_query_answers_with_its_sql_and_its_shape(client, acting_u
     body = response.json()
     assert body["sql"].startswith("SELECT priority, count(*) AS tasks FROM tasks")
     assert body["columns"] == [
-        {"name": "priority", "type": "enum", "grain": None},
-        {"name": "tasks", "type": "number", "grain": None},
+        {"name": "priority", "type": "enum", "grain": None, "date_only": False},
+        {"name": "tasks", "type": "number", "grain": None, "date_only": False},
     ]
     assert body["relations"] == ["tasks"]
 
@@ -510,8 +542,8 @@ class TestGroupingByPerson:
         assert response.status_code == 200, response.json()
         body = response.json()
         assert body["columns"] == [
-            {"name": "person", "type": "text", "grain": None},
-            {"name": "tasks", "type": "number", "grain": None},
+            {"name": "person", "type": "text", "grain": None, "date_only": False},
+            {"name": "tasks", "type": "number", "grain": None, "date_only": False},
         ]
         # The unassigned task is not somebody's work, so it is not a row here.
         assert body["rows"] == [[body["rows"][0][0], 2]]
@@ -712,6 +744,46 @@ async def test_the_trash_is_still_reachable_where_it_is_managed(
         a.g(f"/tasks/{task_id}"), params={"include_deleted": "true"}, headers=a.headers
     )
     assert found.status_code == 200, found.text
+
+
+async def test_a_subtask_reads_its_parent_through_its_link(
+    client, acting_user, session
+):
+    """A link names each end by kind and id, so a statement joins both: what
+    a timeline groups its bars by. A link somebody took back is no link."""
+    a = await acting_user(guild_role=CommunityRole.admin, initiative=True, project=True)
+    parent = await create_task(session, a.project, title="parent")
+    for title in ("child", "unlinked"):
+        child = await create_task(session, a.project, title=title)
+        edge = await create_relationship(
+            session,
+            a.guild,
+            source=(SearchEntityType.task, child.id),
+            target=(SearchEntityType.task, parent.id),
+            relationship_type=RelationshipType.part_of,
+        )
+    await relationships_service.remove(session, edge, removed_by=a.user.id)
+    await session.commit()
+
+    response = await client.post(
+        a.g("/query"),
+        json={
+            "sql": (
+                "SELECT t.title, p.title AS parent FROM tasks t"
+                " LEFT JOIN relationships r ON r.source_id = t.id"
+                " AND r.source_type = 'task' AND r.relationship_type = 'part_of'"
+                " LEFT JOIN tasks p ON p.id = r.target_id AND r.target_type = 'task'"
+                " ORDER BY t.title"
+            )
+        },
+        headers=a.headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["rows"] == [
+        ["child", "parent"],
+        ["parent", None],
+        ["unlinked", None],
+    ]
 
 
 class TestEveryShippedDashboardReportsOnLiveWork:

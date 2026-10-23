@@ -170,11 +170,11 @@ async def test_a_moderator_without_a_grant_cannot_suspend(client, session):
     assert refused.json()["detail"] == GuildMessages.COMMUNITY_SUSPENSION_NEEDS_GRANT
 
 
-async def test_support_cannot_suspend_even_with_a_grant(client, session):
-    support = await create_user(session, role=UserRole.support)
+async def test_a_grant_without_the_capability_cannot_suspend(client, session):
+    member = await create_user(session)
     guild = await create_guild(session)
-    await _moderate_grant(session, user=support, guild=guild)
-    assert (await _suspend(client, support, guild)).status_code == 403
+    await _moderate_grant(session, user=member, guild=guild)
+    assert (await _suspend(client, member, guild)).status_code == 403
 
 
 async def test_a_moderator_suspends_and_lifts_under_a_grant(client, session):

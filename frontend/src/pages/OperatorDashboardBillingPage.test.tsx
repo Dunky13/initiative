@@ -10,11 +10,15 @@ let billingConfig: {
   operator_handoff: boolean;
   insights?: boolean;
   contracts?: boolean;
+  directory?: boolean;
+  control?: boolean;
 } | null = {
   url: "https://billing.example.com",
   operator_handoff: true,
   insights: true,
   contracts: true,
+  directory: true,
+  control: true,
 };
 
 vi.mock("@/hooks/useAppConfig", () => ({
@@ -23,14 +27,18 @@ vi.mock("@/hooks/useAppConfig", () => ({
 
 const mintHandoff = vi.fn();
 const mintContractsHandoff = vi.fn();
+const mintDirectoryHandoff = vi.fn();
+const mintControlHandoff = vi.fn();
 vi.mock("@/api/generated/settings/settings", () => ({
   createBillingInsightsHandoff: () => mintHandoff(),
   createBillingContractsHandoff: () => mintContractsHandoff(),
+  createBillingDirectoryHandoff: () => mintDirectoryHandoff(),
+  createBillingControlHandoff: () => mintControlHandoff(),
 }));
 
 import { OperatorDashboardBillingPage } from "./OperatorDashboardBillingPage";
 
-const renderPage = (role: "operator" | "moderator" = "operator") =>
+const renderPage = (role: "owner" | "operator" | "moderator" = "operator") =>
   renderWithProviders(<OperatorDashboardBillingPage />, {
     auth: { user: buildUser({ role }) },
   });
@@ -39,12 +47,43 @@ describe("OperatorDashboardBillingPage", () => {
   beforeEach(() => {
     mintHandoff.mockReset();
     mintContractsHandoff.mockReset();
+    mintDirectoryHandoff.mockReset();
+    mintControlHandoff.mockReset();
     billingConfig = {
       url: "https://billing.example.com",
       operator_handoff: true,
       insights: true,
       contracts: true,
+      directory: true,
+      control: true,
     };
+  });
+
+  it.each([
+    ["directory", /open the directory/i, mintDirectoryHandoff],
+    ["control", /open control/i, mintControlHandoff],
+  ])("opens the %s for an owner, under its own door", async (door, name, mint) => {
+    const location = { href: "" };
+    const tab = { opener: {} as unknown, location, close: vi.fn() };
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window);
+    mint.mockResolvedValue({ handoff_token: "tok-o", expires_in_seconds: 60 });
+
+    renderPage("owner");
+    await userEvent.click(await screen.findByRole("button", { name }));
+
+    const [path, fragment] = location.href.split("#");
+    expect(path).toBe(`https://billing.example.com/${door}?lang=en`);
+    expect(fragment).toBe(`${door}_handoff=tok-o`);
+    expect(mintHandoff).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
+  it("offers an operator neither the directory nor Control", async () => {
+    renderPage();
+
+    await screen.findByRole("button", { name: /open contracts/i });
+    expect(screen.queryByRole("button", { name: /open the directory/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /open control/i })).toBeNull();
   });
 
   it("opens the contracts console under its own door", async () => {

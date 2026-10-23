@@ -1,11 +1,11 @@
-"""``POST /api/v1/billing/community-notice``: billing asks for a fixed notice
-to reach a community's owner.
+"""``POST /api/v1/billing/notices``: billing asks for fixed notices to reach
+communities' owners.
 
-Pinned: the same double envelope as the tier write (HMAC + one-shot EdDSA
-jti); exactly-once per ``event_id`` via ``billing_event_log``; only Paddle's
-source and the two trial kinds; the owner billing names while they are still
-a member, else the community's superadmins; nothing for a deleted community;
-and the letter in each recipient's own language.
+Pinned: the v2 envelope (one-shot ``jti``); exactly-once per ``key`` via
+``billing_event_log``; only the fixed kinds; the owner billing names while
+they are still a member, else the community's superadmins; nothing for a
+deleted community; each notice in a batch answered on its own; and the letter
+in each recipient's own language.
 """
 
 from __future__ import annotations
@@ -17,11 +17,7 @@ from httpx import AsyncClient
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.v1.platform_endpoints.billing_test import (
-    _configure_billing,  # noqa: F401 - autouse: the envelope's keys
-    _mint_token,
-    _post,
-)
+from app.testing import billing_boundary
 from app.models.platform.billing import BillingEventLog
 from app.models.platform.guild import CommunityRole, CommunityStatus
 from app.models.platform.identity_ref import IdentityEntity
@@ -35,6 +31,32 @@ from app.testing import (
     create_user,
     drain_notices,
 )
+
+
+@pytest.fixture(autouse=True)
+def _configure_billing(monkeypatch):
+    billing_boundary.configure(monkeypatch)
+
+
+class _Answer:
+    """One notice's answer in a batch, shaped like the response it was."""
+
+    def __init__(self, response):
+        self.status_code = response.status_code
+        self.text = response.text
+        self._body = response.json()
+
+    def json(self) -> dict:
+        if "results" not in self._body:
+            return self._body
+        (result,) = self._body["results"]
+        return {k: v for k, v in result.items() if k != "key"}
+
+
+async def _post(client, _verb: str, payload: dict, **claims) -> _Answer:
+    return _Answer(
+        await billing_boundary.post(client, "notices", {"notices": [payload]}, **claims)
+    )
 
 
 @pytest.fixture
@@ -73,11 +95,10 @@ async def _community(session: AsyncSession):
 async def _notice(guild_id: int, **fields) -> dict:
     return {
         "community_ref": await billing_guild_ref(guild_id),
-        "event_id": fields.pop("event_id", f"evt-{secrets.token_hex(6)}"),
-        "source": fields.pop("source", "paddle_webhook"),
+        "key": fields.pop("key", f"notice-{secrets.token_hex(6)}"),
         "kind": fields.pop("kind", "trial_ending"),
         "recipient_user_ref": fields.pop("recipient_user_ref", None),
-        "trial_ends_on": fields.pop("trial_ends_on", "2026-10-08"),
+        "day": fields.pop("day", "2026-10-08"),
         **fields,
     }
 
@@ -95,6 +116,7 @@ async def _told(session: AsyncSession, user_id: int) -> list[Notification]:
                         [
                             NotificationType.community_trial_ending,
                             NotificationType.community_trial_ended,
+                            NotificationType.community_pause_reminder,
                         ]
                     ),
                 )
@@ -165,7 +187,7 @@ async def test_a_notice_that_could_not_be_written_is_not_recorded(
     """Nothing is claimed until the notice is written down, so billing's retry
     of the same event delivers it."""
     guild_id, owner_id, *_ = await _community(session)
-    payload = await _notice(guild_id, event_id="evt-retry")
+    payload = await _notice(guild_id, key="evt-retry")
     real_enqueue = notice_outbox.enqueue
 
     async def _broken(*_args, **_kwargs):
@@ -173,8 +195,8 @@ async def test_a_notice_that_could_not_be_written_is_not_recorded(
 
     monkeypatch.setattr(notice_outbox, "enqueue", _broken)
     failed = await _post(client, "community-notice", payload)
-    assert failed.status_code == 503, failed.text
-    assert failed.json()["detail"] == "BILLING_NOTICE_NOT_DELIVERED"
+    assert failed.status_code == 200, failed.text
+    assert failed.json() == {"error": "BILLING_NOTICE_NOT_DELIVERED"}
     assert (
         await session.exec(
             select(BillingEventLog.event_id).where(
@@ -255,7 +277,7 @@ async def test_a_replayed_event_tells_nobody_twice(
     client: AsyncClient, session: AsyncSession, letters
 ):
     guild_id, owner_id, *_ = await _community(session)
-    payload = await _notice(guild_id, event_id="evt-notice-dup")
+    payload = await _notice(guild_id, key="evt-notice-dup")
 
     first = await _post(client, "community-notice", payload)
     again = await _post(client, "community-notice", payload)
@@ -270,9 +292,7 @@ async def test_a_replayed_event_tells_nobody_twice(
             select(BillingEventLog).where(BillingEventLog.event_id == "evt-notice-dup")
         )
     ).all()
-    assert [(row.op, row.source) for row in rows] == [
-        ("community_notice", "paddle_webhook")
-    ]
+    assert [(row.op, row.source) for row in rows] == [("community_notice", "billing")]
 
 
 @pytest.mark.parametrize("status", [CommunityStatus.deleted, CommunityStatus.suspended])
@@ -288,7 +308,7 @@ async def test_a_deleted_or_suspended_community_is_recorded_and_told_nothing(
     await session.commit()
 
     response = await _post(
-        client, "community-notice", await _notice(guild_id, event_id="evt-gone")
+        client, "community-notice", await _notice(guild_id, key="evt-gone")
     )
 
     assert response.status_code == 200, response.text
@@ -304,15 +324,43 @@ async def test_a_deleted_or_suspended_community_is_recorded_and_told_nothing(
     ).all() == ["evt-gone"]
 
 
+async def test_a_paused_plan_is_told_when_it_goes_on_hold(
+    client: AsyncClient, session: AsyncSession, letters
+):
+    """A pause reminder names the day the community goes on hold, and its
+    button leads to the plan, where it is resumed."""
+    guild_id, owner_id, _, _, _ = await _community(session)
+    owner_ref = await identity_refs.billing_ref(IdentityEntity.user, owner_id)
+
+    response = await _post(
+        client,
+        "community-notice",
+        await _notice(
+            guild_id,
+            kind="pause_reminder",
+            day="2027-04-17",
+            recipient_user_ref=owner_ref,
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    (line,) = await _told(session, owner_id)
+    assert line.type == NotificationType.community_pause_reminder
+    assert line.data["holds_on"] == "2027-04-17"
+    (letter,) = letters
+    pieces = letter["pieces"]
+    assert pieces.subject == "Acme's plan is paused until you resume it"
+    assert "17 April 2027" in pieces.body
+    assert pieces.link.endswith(f"/c/{guild_id}/billing?page=manage")
+
+
 @pytest.mark.parametrize(
     ("fields", "code"),
     [
         ({"kind": "trial_extended"}, "BILLING_INVALID_PAYLOAD"),
         ({"kind": "trial_ending", "message": "free text"}, None),
-        ({"source": "platinum_invoice"}, "BILLING_NOTICE_SOURCE_NOT_ALLOWED"),
-        ({"source": "made_up"}, "BILLING_INVALID_PAYLOAD"),
-        ({"trial_ends_on": "soon"}, "BILLING_INVALID_PAYLOAD"),
-        ({"event_id": "x" * 129}, "BILLING_INVALID_PAYLOAD"),
+        ({"day": "soon"}, "BILLING_INVALID_PAYLOAD"),
+        ({"key": "x" * 129}, "BILLING_INVALID_PAYLOAD"),
     ],
 )
 async def test_only_the_fixed_notices_are_taken(
@@ -323,7 +371,7 @@ async def test_only_the_fixed_notices_are_taken(
     response = await _post(
         client,
         "community-notice",
-        await _notice(guild_id, **{"event_id": "evt-x", **fields}),
+        await _notice(guild_id, **{"key": "evt-x", **fields}),
     )
 
     if code is None:
@@ -332,8 +380,8 @@ async def test_only_the_fixed_notices_are_taken(
         (line,) = await _told(session, owner_id) or [None]
         assert line is not None and "message" not in line.data
         return
-    assert response.status_code == 422, response.text
-    assert response.json()["detail"] == code
+    assert response.status_code == 200, response.text
+    assert response.json() == {"error": code}
     assert await _told(session, owner_id) == []
     assert (
         await session.exec(
@@ -342,49 +390,49 @@ async def test_only_the_fixed_notices_are_taken(
     ).all() == []
 
 
-async def test_the_envelope_is_the_tier_writes(
+async def test_the_envelope_is_every_verbs(
     client: AsyncClient, session: AsyncSession, letters
 ):
     guild_id, owner_id, *_ = await _community(session)
     payload = await _notice(guild_id)
 
-    unsigned = await client.post("/api/v1/billing/community-notice", json=payload)
+    unsigned = await client.post("/api/v1/billing/notices", json={"notices": [payload]})
     assert unsigned.status_code == 403
     assert unsigned.json()["detail"] == "BILLING_MISSING_SIGNATURE"
 
-    wrong_audience = await _post(
-        client, "community-notice", payload, token=_mint_token(aud="initiative:other")
-    )
+    wrong_audience = await _post(client, "notices", payload, aud="initiative:other")
     assert wrong_audience.status_code == 403
 
-    token = _mint_token(jti="notice-once")
-    first = await _post(client, "community-notice", payload, token=token)
+    first = await _post(client, "notices", payload, jti="notice-once")
     assert first.status_code == 200, first.text
     replayed = await _post(
-        client, "community-notice", await _notice(guild_id), token=token
+        client, "notices", await _notice(guild_id), jti="notice-once"
     )
     assert replayed.status_code == 403
     assert replayed.json()["detail"] == "BILLING_REPLAYED_TOKEN"
     assert len(await _told(session, owner_id)) == 1
 
 
-async def test_an_unknown_community_is_404_and_consumes_nothing(
+async def test_each_notice_in_a_batch_is_answered_on_its_own(
     client: AsyncClient, session: AsyncSession, letters
 ):
-    payload = {
+    guild_id, owner_id, *_ = await _community(session)
+    good = await _notice(guild_id, key="good")
+    unknown = {
+        **(await _notice(guild_id)),
         "community_ref": "gbil_nobody",
-        "event_id": "evt-unknown",
-        "source": "paddle_webhook",
-        "kind": "trial_ending",
-        "recipient_user_ref": None,
-        "trial_ends_on": "2026-10-08",
+        "key": "nobody",
     }
-    response = await _post(client, "community-notice", payload)
-    assert response.status_code == 404
-    assert (
-        await session.exec(
-            select(BillingEventLog.event_id).where(
-                BillingEventLog.event_id == "evt-unknown"
-            )
-        )
-    ).all() == []
+    malformed = {**(await _notice(guild_id)), "kind": "made_up", "key": "bad"}
+
+    response = await billing_boundary.post(
+        client, "notices", {"notices": [unknown, good, malformed]}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["results"] == [
+        {"key": "nobody", "error": "BILLING_COMMUNITY_NOT_FOUND"},
+        {"key": "good", "delivered": True},
+        {"key": "bad", "error": "BILLING_INVALID_PAYLOAD"},
+    ]
+    assert len(await _told(session, owner_id)) == 1

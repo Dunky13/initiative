@@ -146,16 +146,12 @@ GUILD_LEVEL_TABLES: frozenset[str] = frozenset(
         "import_jobs",  # same shape as export_jobs: a backup import spans
         # initiatives, and the row's options/plan/report text plus the staged
         # payload it gates must not be guild-wide-readable.
-        # A member's own AI connection preference (also in OWN_ROW_TABLES).
-        "guild_ai_member_prefs",
-        # A member's own credentials: that they gave an AI connection a key, and
-        # their connection to an installed plug-in's vendor (MEMBER_CREDENTIAL_TABLES).
-        # No FK to any initiative — a connection and a plug-in are community-wide.
-        "guild_ai_member_keys",
+        # A member's own credentials: their connection to an installed plug-in's
+        # vendor (MEMBER_CREDENTIAL_TABLES). No FK to any initiative — a
+        # plug-in is community-wide.
         "guild_plugin_user_connections",
         # What those credentials hold, beside them (MEMBER_SECRET_TABLES): the
         # member and the system engine alone.
-        "ai_member_key_secrets",
         "plugin_connection_secrets",
         # A member's answer to an installed plug-in asking to act as them, one per
         # purpose. The same shape as the connections beside it: no FK to any
@@ -200,7 +196,6 @@ MANAGED_TABLES: dict[str, str] = {
 OWN_ROW_TABLES: dict[str, str] = {
     "export_jobs": "created_by",
     "import_jobs": "created_by",
-    "guild_ai_member_prefs": "user_id",
     "plugin_member_consents": "user_id",
 }
 
@@ -227,17 +222,14 @@ PRIVATE_ROW_SHARED_READ: frozenset[str] = frozenset(
 )
 
 # --- A member's credentials ----------------------------------------------------
-# Guild-level tables saying that a member holds a credential: table ->
-# (owner column, the rows the seat reaches, or ``None`` for every row). The
-# member, the community's seat and the system engine read and write them —
-# not a plain admin or a settings rung — rendered as ``member_credential_*``
-# policies by ``app.db.guild_ddl.render_guild_rls_ddl``. A key held for a
-# platform AI connection is between the member and the platform, so the seat
-# reaches only the community's own. Every entry here MUST also be in
-# ``GUILD_LEVEL_TABLES`` — enforced in ``tenancy_test.py``.
-MEMBER_CREDENTIAL_TABLES: dict[str, tuple[str, str | None]] = {
-    "guild_ai_member_keys": ("user_id", "connection_scope = 'community'"),
-    "guild_plugin_user_connections": ("user_id", None),
+# Guild-level tables saying that a member holds a credential: table -> owner
+# column. The member, the community's seat and the system engine read and write
+# them — not a plain admin or a settings rung — rendered as
+# ``member_credential_*`` policies by ``app.db.guild_ddl.render_guild_rls_ddl``.
+# Every entry here MUST also be in ``GUILD_LEVEL_TABLES`` — enforced in
+# ``tenancy_test.py``.
+MEMBER_CREDENTIAL_TABLES: dict[str, str] = {
+    "guild_plugin_user_connections": "user_id",
 }
 
 # --- What a member's credentials hold -----------------------------------------
@@ -247,7 +239,6 @@ MEMBER_CREDENTIAL_TABLES: dict[str, tuple[str, str | None]] = {
 # the credential row takes its secret with it (ON DELETE CASCADE). Every entry
 # here MUST also be in ``GUILD_LEVEL_TABLES`` — enforced in ``tenancy_test.py``.
 MEMBER_SECRET_TABLES: dict[str, tuple[str, str]] = {
-    "ai_member_key_secrets": ("guild_ai_member_keys", "key_id"),
     "plugin_connection_secrets": ("guild_plugin_user_connections", "connection_row_id"),
 }
 
@@ -317,8 +308,6 @@ CREATED_BY_EXEMPT_TABLES: frozenset[str] = frozenset(
         "initiative_join_requests",
         # Per-user state, keyed by the user it belongs to. ``user_id`` is both
         # the author and the subject, so a second copy of it says nothing.
-        "guild_ai_member_keys",
-        "guild_ai_member_prefs",
         "guild_plugin_user_connections",
         "plugin_member_consents",
         "post_reads",
@@ -330,7 +319,6 @@ CREATED_BY_EXEMPT_TABLES: frozenset[str] = frozenset(
         "guild_plugin_secrets",
         # A member's secret values, one row per credential row, which names
         # whose it is.
-        "ai_member_key_secrets",
         "plugin_connection_secrets",
         # A connection's shared key. The connection row names who made it.
         "guild_ai_connection_keys",

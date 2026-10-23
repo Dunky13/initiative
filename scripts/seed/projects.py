@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import update
 
+from app.core.relationships import RelationshipType
+from app.core.search import SearchEntityType
 from app.core.tools import Tool
 from app.models.tenant._mixins import archive_models
 from app.models.tenant.project import Project
@@ -23,12 +25,15 @@ from app.models.tenant.task import (
     TaskAssignee,
     TaskPriority,
     TaskStatus,
+    TaskType,
     TaskStatusCategory,
 )
 from app.schemas.tenant.task import mint_checklist_item_id
+from app.services.tenant import relationships as relationships_service
 from app.services.tenant.archive import archive_entity
 from app.services.tenant.task_completion import sync_completed_at
 from app.services.tenant.task_statuses import ensure_default_statuses
+from app.services.tenant.task_types import ensure_default_types
 
 from seed.common import NOW, Community, share, tag
 
@@ -140,7 +145,9 @@ def mega_dungeon_tasks() -> list[dict]:
 #: ``template`` puts it on the Templates tab; ``archived_days_ago`` archives it
 #: that many days back so the Archive tab has a spread of dates to sort by.
 #: A task names the stage it wants (``category``), ``due_days``/``start_days``
-#: relative to now, and ``archived`` to archive it on its own.
+#: relative to now, ``type`` (a default task type, Task if unnamed),
+#: ``waits_on`` (titles of tasks in the same project it depends on), and
+#: ``archived`` to archive it on its own.
 PROJECTS: dict[str, list[dict]] = {
     "primary": [
         {
@@ -161,7 +168,13 @@ PROJECTS: dict[str, list[dict]] = {
                     "priority": TaskPriority.urgent,
                     "category": TaskStatusCategory.backlog,
                     "assignees": ["Thorn Ironforge", "Elara Moonwhisper"],
-                    "due_days": 30,
+                    "type": "Milestone",
+                    "start_days": 20,
+                    "due_days": 24,
+                    "waits_on": [
+                        "Find the Sunsword in the Amber Temple",
+                        "Retrieve the Tome of Strahd",
+                    ],
                     "tags": ["quest", "combat", "boss fight"],
                 },
                 {
@@ -171,6 +184,8 @@ PROJECTS: dict[str, list[dict]] = {
                     "priority": TaskPriority.high,
                     "category": TaskStatusCategory.in_progress,
                     "assignees": ["Dungeon Master"],
+                    "start_days": -6,
+                    "due_days": 2,
                     "checklist": [
                         "Explore the basement",
                         "Find the hidden altar",
@@ -183,7 +198,9 @@ PROJECTS: dict[str, list[dict]] = {
                     "description": "The legendary weapon is key to defeating the Dark Lord.",
                     "priority": TaskPriority.high,
                     "category": TaskStatusCategory.todo,
+                    "start_days": 5,
                     "due_days": 14,
+                    "waits_on": ["Survive the Death House"],
                     "assignees": ["Thorn Ironforge"],
                     "tags": ["quest", "lore", "items/loot"],
                 },
@@ -194,6 +211,8 @@ PROJECTS: dict[str, list[dict]] = {
                     "priority": TaskPriority.medium,
                     "category": TaskStatusCategory.done,
                     "assignees": ["Vex Shadowstep"],
+                    "start_days": -10,
+                    "due_days": -5,
                     "tags": ["NPC", "roleplay"],
                 },
                 {
@@ -202,7 +221,9 @@ PROJECTS: dict[str, list[dict]] = {
                     "priority": TaskPriority.high,
                     "category": TaskStatusCategory.todo,
                     "assignees": ["Elara Moonwhisper"],
+                    "start_days": 1,
                     "due_days": 7,
+                    "waits_on": ["Survive the Death House"],
                     "tags": ["quest", "lore", "items/loot"],
                 },
                 {
@@ -211,6 +232,7 @@ PROJECTS: dict[str, list[dict]] = {
                     "against Strahd if convinced.",
                     "priority": TaskPriority.low,
                     "category": TaskStatusCategory.backlog,
+                    "type": "Idea",
                 },
                 {
                     "title": "Escort Ireena to Vallaki",
@@ -219,6 +241,8 @@ PROJECTS: dict[str, list[dict]] = {
                     "priority": TaskPriority.urgent,
                     "category": TaskStatusCategory.done,
                     "assignees": ["Seraphina Dawnlight", "Thorn Ironforge"],
+                    "start_days": -12,
+                    "due_days": -8,
                     "checklist": [
                         "Pack supplies for the journey",
                         "Guard Ireena through the Svalich Woods",
@@ -1524,11 +1548,31 @@ async def create_project(c: Community, d: dict) -> Project:
     tag(c, project, d.get("tags", ()))
     statuses = {
         status.category: status
-        for status in await ensure_default_statuses(c.session, project.id)
+        for status in await ensure_default_statuses(c.session, project.id, locale="en")
+    }
+    types = {
+        task_type.name: task_type
+        for task_type in await ensure_default_types(c.session, project.id, locale="en")
     }
     for position, td in enumerate(d.get("tasks", ())):
         status = resolve_status(statuses, td["category"])
-        await _create_task(c, project, status, position, td)
+        # A task names its type ("Bug"), or is a Task.
+        task_type = types.get(td.get("type", "Task"), types["Task"])
+        await _create_task(c, project, status, task_type, position, td)
+    # Once every task exists, so a task may wait on one listed after it.
+    for td in d.get("tasks", ()):
+        for title in td.get("waits_on", ()):
+            await relationships_service.create(
+                c.session,
+                source=relationships_service.Endpoint(
+                    SearchEntityType.task, c.tasks[td["title"]].id
+                ),
+                relationship_type=RelationshipType.depends_on,
+                target=relationships_service.Endpoint(
+                    SearchEntityType.task, c.tasks[title].id
+                ),
+                created_by=c.users[d["owner"]].id,
+            )
     if d.get("archived_days_ago") is not None:
         c.archives.append((project, NOW - timedelta(days=d["archived_days_ago"])))
     await c.session.flush()
@@ -1536,12 +1580,18 @@ async def create_project(c: Community, d: dict) -> Project:
 
 
 async def _create_task(
-    c: Community, project: Project, status: TaskStatus, position: int, td: dict
+    c: Community,
+    project: Project,
+    status: TaskStatus,
+    task_type: TaskType,
+    position: int,
+    td: dict,
 ) -> None:
     due, start = td.get("due_days"), td.get("start_days")
     task = Task(
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=task_type.id,
         title=td["title"],
         description=td.get("description"),
         priority=td["priority"],

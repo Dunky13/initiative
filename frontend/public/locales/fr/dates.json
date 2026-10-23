@@ -1,6 +1,9 @@
 {
   "invalidRange": "La date de fin ne peut pas précéder la date de début.",
   "picker": {
+    "invalidDate": "Saisissez une date valide.",
+    "invalidEventRange": "L’événement doit se terminer après son début.",
+    "invalidLocalDateTime": "Saisissez une date et une heure valides. Lors du changement d’heure, choisissez une heure en dehors de l’intervalle sauté ou répété.",
     "pickDate": "Choisir une date",
     "pickDateTime": "Choisir une date et une heure",
     "typeDate": "Saisir ou choisir une date",
@@ -82,6 +85,11 @@
     "onFirstWorkDay": "le premier jour ouvré",
     "onLastWorkDay": "le dernier jour ouvré",
     "onFirstOf": "le premier {{weekdays}}",
-    "onLastOf": "le dernier {{weekdays}}"
+    "onLastOf": "le dernier {{weekdays}}",
+    "hour": "heure",
+    "hours": "heures",
+    "everyHour": "chaque heure",
+    "dailyLimit_one": "au maximum une fois par jour",
+    "dailyLimit_other": "au maximum {{count}} fois par jour"
   }
 }

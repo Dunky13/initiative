@@ -43,12 +43,14 @@ from app.core.version import get_version
 from app.models.tenant.comment import Comment, in_thread
 from app.models.tenant.relationship import EntityRelationship
 from app.models.tenant.project import Project
+from app.models.tenant.property import PropertyType
 from app.models.platform.user_profile_view import MemberProfile
 from app.models.tenant.tag import Tag
 from app.models.tenant.task import Task, TaskStatus
 from app.schemas.tenant.project_export import (
     ProjectExportComment,
     ProjectExportEnvelope,
+    ProjectExportLayout,
     ProjectExportProject,
     ProjectExportPropertyDefinition,
     ProjectExportChecklistItem,
@@ -56,6 +58,7 @@ from app.schemas.tenant.project_export import (
     ProjectExportTask,
     ProjectExportTaskLink,
     ProjectExportTaskStatus,
+    ProjectExportTaskType,
 )
 from app.services.import_engine.mentions import (
     detach_markdown_mentions,
@@ -63,8 +66,12 @@ from app.services.import_engine.mentions import (
     markdown_mention_ids,
 )
 from app.services.import_engine.references import detach_markdown_references
+from app.core.tools import Tool
+from app.services.import_engine.common import load_initiative_properties
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
+from app.services.tenant import task_types as task_types_service
+from app.services.tenant import tool_layouts as tool_layouts_service
 
 
 async def build_project_export(
@@ -147,6 +154,8 @@ async def build_project_export(
         summary.property_id for summary in annotated_properties(project)
     }
     status_names = {s.id: s.name for s in statuses_sorted}
+    project_types = await task_types_service.list_types(session, project.id)
+    type_names = {t.id: t.name for t in project_types}
     for task in project_tasks:
         referenced_property_ids.update(
             summary.property_id for summary in annotated_properties(task)
@@ -181,7 +190,7 @@ async def build_project_export(
             task.description, mention_handles
         )
         carry, carry_described = await _portable_carry(
-            session, task.recurrence_carry, mention_handles
+            session, task.recurrence_carry, mention_handles, type_names
         )
         tasks.append(
             ProjectExportTask(
@@ -192,14 +201,18 @@ async def build_project_export(
                 due_date=task.due_date,
                 recurrence=task.recurrence,
                 recurrence_shift=task.recurrence_shift,
+                recurrence_anchor=task.recurrence_anchor,
+                recurrence_anchor_count=task.recurrence_anchor_count,
                 recurrence_strategy=task.recurrence_strategy,
                 recurrence_occurrence_count=task.recurrence_occurrence_count,
+                recurrence_limit=task.recurrence_limit,
                 series=task.series_id,
                 recurrence_carry=carry,
                 position=task.position,
                 archived_at=task.archived_at,
                 completed_at=task.completed_at,
                 status_name=status_name,
+                type_name=type_names.get(task.task_type_id),
                 tags=task_tags,
                 assignee_handles=assignee_handles,
                 assignee_names=assignee_names,
@@ -214,18 +227,75 @@ async def build_project_export(
             )
         )
 
-    definitions = await properties_service.load_definitions_by_ids(
-        session, referenced_property_ids
+    # The initiative's properties are what a layout can name besides those a
+    # value names. Each one exported is written at its place in the envelope,
+    # which is how a layout names it.
+    definitions = {
+        **{
+            definition.id: definition
+            for definition in (
+                await load_initiative_properties(
+                    session, initiative_id=project.initiative_id
+                )
+            ).values()
+        },
+        **await properties_service.load_definitions_by_ids(
+            session, referenced_property_ids
+        ),
+    }
+    property_places: dict[int, int] = {}
+
+    def property_place(property_id: int) -> Optional[int]:
+        if property_id not in definitions:
+            return None
+        return property_places.setdefault(property_id, len(property_places) + 1)
+
+    for property_id in sorted(referenced_property_ids):
+        property_place(property_id)
+    status_places = {s.id: place for place, s in enumerate(statuses_sorted, start=1)}
+    type_places = {t.id: place for place, t in enumerate(project_types, start=1)}
+    people = frozenset(
+        property_id
+        for property_id, definition in definitions.items()
+        if definition.type == PropertyType.user_reference
     )
+    layout_rows = await tool_layouts_service.list_rows(
+        session,
+        tool_layouts_service.Target(Tool.project, project.id, project.initiative_id),
+    )
+    layouts = [
+        ProjectExportLayout(
+            kind=row.kind,
+            task_type=(
+                type_places.get(row.task_type_id)
+                if row.task_type_id is not None
+                else None
+            ),
+            definition=tool_layouts_service.remapped_definition(
+                row.definition,
+                tool_layouts_service.Remap(
+                    statuses=status_places.get,
+                    properties=property_place,
+                    community=False,
+                    people=people,
+                    types=type_places.get,
+                ),
+            ),
+        )
+        for row in sorted(
+            layout_rows,
+            key=lambda row: (row.kind, type_places.get(row.task_type_id or 0, 0)),
+        )
+    ]
     property_definitions = [
         ProjectExportPropertyDefinition(
-            name=definition.name,
-            type=definition.type,
-            position=definition.position,
-            color=definition.color,
-            options=definition.options,
+            name=definitions[property_id].name,
+            type=definitions[property_id].type,
+            position=definitions[property_id].position,
+            color=definitions[property_id].color,
+            options=definitions[property_id].options,
         )
-        for definition in definitions.values()
+        for property_id in property_places
     ]
 
     return ProjectExportEnvelope(
@@ -248,8 +318,21 @@ async def build_project_export(
         ),
         tags=project_tags,
         task_statuses=statuses,
+        task_types=[
+            ProjectExportTaskType(
+                name=t.name,
+                position=t.position,
+                is_default=t.is_default,
+                color=t.color,
+                icon=t.icon,
+                layout_preset=t.layout_preset,
+                starting_values=t.starting_values,
+            )
+            for t in project_types
+        ],
         property_definitions=property_definitions,
         tasks=tasks,
+        layouts=layouts,
     )
 
 
@@ -379,17 +462,21 @@ async def _portable_carry(
     session: AsyncSession,
     carry: dict[str, Any] | None,
     mention_handles: Mapping[int, str],
+    type_names: Mapping[int, str],
 ) -> tuple[dict[str, Any] | None, list[str]]:
     """``recurrence_carry`` as the envelope names things: its description's
-    mentions by handle and references by ref, its tags by name and colour and
-    its assignees by handle. Also the handles the description mentions."""
+    mentions by handle and references by ref, its tags by name and colour, its
+    assignees by handle and its type by name. Also the handles the description
+    mentions."""
     if not carry:
         return None, []
     portable = {
         field: value
         for field, value in carry.items()
-        if field not in {"tag_ids", "assignee_ids"}
+        if field not in {"tag_ids", "assignee_ids", "task_type_id"}
     }
+    if carry.get("task_type_id") in type_names:
+        portable["type_name"] = type_names[carry["task_type_id"]]
     described: list[str] = []
     if "description" in carry:
         description, described = detach_markdown_mentions(

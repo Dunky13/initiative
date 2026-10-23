@@ -1,10 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { CheckCircle2, Download, ExternalLink, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronRight, Download, ExternalLink, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import type { ChangelogEntry } from "@/api/generated/initiativeAPI.schemas";
 import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogClose,
@@ -20,23 +22,64 @@ import { CHANGELOG_URL, RELEASES_URL } from "@/lib/links";
 import { cn } from "@/lib/utils";
 
 /**
- * What version this is, and what has changed lately — opened from the sidebar.
+ * What version this is, and what has changed lately — opened from the sidebar,
+ * or from the "updated" toast once a new version is running (see
+ * ``components/UpdatedNotice``).
  *
- * The other half of this dialog used to be the "a newer version is running on
- * the server" prompt. That is an announcement, and now renders as one (see
- * ``components/announcements/UpdateAnnouncementDialog``); what is left here is
- * the reference panel a person opens on purpose.
+ * Pass ``children`` for a trigger, or ``open``/``onOpenChange`` to open it from
+ * elsewhere.
  */
 interface VersionDialogProps {
   children?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   currentVersion: string;
   latestVersion?: string | null;
   hasUpdate?: boolean;
   isLoadingVersion?: boolean;
 }
 
+/** One release's notes. Its title opens and closes it; the newest starts
+ *  open, and an older one stays closed until asked for, its pictures with it. */
+const Release = ({
+  entry,
+  defaultOpen,
+  className,
+}: {
+  entry: ChangelogEntry;
+  defaultOpen: boolean;
+  className?: string;
+}) => {
+  const { t } = useTranslation("communities");
+  return (
+    <Collapsible defaultOpen={defaultOpen} className={className}>
+      <h4 className="font-semibold text-base">
+        <CollapsibleTrigger className="group flex w-full items-center gap-2 text-left">
+          <ChevronRight
+            className="h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-90"
+            aria-hidden="true"
+          />
+          {t("version.version", { version: entry.version })}
+          <Badge variant="outline" className="font-normal text-xs">
+            {entry.date}
+          </Badge>
+        </CollapsibleTrigger>
+      </h4>
+      <CollapsibleContent className="pt-3 pl-6">
+        {entry.changes.trim() ? (
+          <Markdown surface="release" remoteImages content={entry.changes} />
+        ) : (
+          <p className="text-muted-foreground text-sm">{t("version.noDetailedChanges")}</p>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
+
 export const VersionDialog = ({
   children,
+  open,
+  onOpenChange,
   currentVersion,
   latestVersion,
   hasUpdate = false,
@@ -44,11 +87,11 @@ export const VersionDialog = ({
 }: VersionDialogProps) => {
   const { t } = useTranslation("communities");
 
-  const { data, isLoading } = useChangelog({ limit: 20 });
+  const { data, isLoading } = useChangelog({ limit: 20 }, { enabled: open ?? true });
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {children ? <DialogTrigger asChild>{children}</DialogTrigger> : null}
       <DialogContent className="flex h-[80vh] flex-col gap-0 sm:max-w-2xl">
         <DialogHeader className="shrink-0">
           <DialogTitle>{t("version.versionInformation")}</DialogTitle>
@@ -120,28 +163,18 @@ export const VersionDialog = ({
                 <Loader2 className="h-6 w-6 animate-spin" />
               </div>
             ) : data?.entries && data.entries.length > 0 ? (
-              <ScrollArea className="flex-1">
-                <div className="space-y-6 pr-6">
+              <ScrollArea className="[&_[data-radix-scroll-area-viewport]>div]:block! flex-1">
+                {/* Radix lays the viewport's content out as a table, which
+                    widens to fit a strip of pictures instead of letting it
+                    scroll; the override above keeps it to the dialog's width. */}
+                <div className="space-y-4 pr-6">
                   {data.entries.map((entry, entryIdx) => (
-                    <div key={entry.version} className={entryIdx > 0 ? "border-t pt-6" : ""}>
-                      <div className="mb-4 border-b pb-2">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-base">
-                            {t("version.version", { version: entry.version })}
-                          </h4>
-                          <Badge variant="outline" className="text-xs">
-                            {entry.date}
-                          </Badge>
-                        </div>
-                      </div>
-                      {entry.changes.trim() ? (
-                        <Markdown remoteImages content={entry.changes} />
-                      ) : (
-                        <p className="text-muted-foreground text-sm">
-                          {t("version.noDetailedChanges")}
-                        </p>
-                      )}
-                    </div>
+                    <Release
+                      key={entry.version}
+                      entry={entry}
+                      defaultOpen={entryIdx === 0}
+                      className={entryIdx > 0 ? "border-t pt-4" : undefined}
+                    />
                   ))}
                 </div>
               </ScrollArea>

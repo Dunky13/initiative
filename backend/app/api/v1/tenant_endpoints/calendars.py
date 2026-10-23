@@ -36,6 +36,7 @@ from app.api.deps import (
 from app.core.rate_limit import limiter
 from app.core.messages import CalendarMessages, GuildMessages
 from app.core.tools import Tool
+from app.core.user_input_validators import resolve_zone
 from app.models.tenant.calendar import Calendar
 from app.models.tenant.guild_plugin import GuildPlugin
 from app.models.platform.user import User
@@ -127,7 +128,7 @@ async def calendar_feed(
         )
     except GuildAccessError as exc:
         raise_for_guild_access(exc)
-    await resource_access.load_authorized(
+    calendar = await resource_access.load_authorized(
         session, Tool.calendar, calendar_id, user, context
     )
     params = {"calendar_ids": [calendar_id]}
@@ -140,7 +141,14 @@ async def calendar_feed(
         format="ics",
     )
     dicts, _ = await event_dicts(session, user, params)
-    body = ical_from_export_dicts(dicts)
+    # Named with where it lives, so two communities' "Events" stay apart in
+    # the subscriber's app, and listed in the subscriber's own zone.
+    home = calendar.initiative.name if calendar.initiative else context.guild.name
+    body = ical_from_export_dicts(
+        dicts,
+        name=f"{calendar.name} · {home}",
+        tz=resolve_zone(user.timezone).key,
+    )
     headers = {
         "ETag": f'"{sha256(body).hexdigest()}"',
         "Cache-Control": "private, no-cache",

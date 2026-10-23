@@ -1,3 +1,4 @@
+import calendar
 from datetime import datetime, timedelta, timezone
 from itertools import islice
 from zoneinfo import ZoneInfo
@@ -15,9 +16,32 @@ EAST = datetime(2026, 10, 5, 0, 30, tzinfo=BERLIN)
 
 
 @pytest.mark.parametrize(
+    ("day", "year_days"),
+    [(29, "-307,-247,-156,29"), (30, "-307,-246,-155,30"), (31, "-307,-246,-154,31")],
+)
+@pytest.mark.parametrize("interval", [1, 2])
+def test_yearly_editor_clamps_each_selected_month(day, year_days, interval):
+    """The editor's year-day encoding selects each month, including leap February."""
+    text = (
+        f"RRULE:FREQ=YEARLY;INTERVAL={interval};"
+        f"BYMONTHDAY={','.join(str(d) for d in range(28, day + 1))};"
+        f"BYYEARDAY={year_days};BYMONTH=1,2,4,7"
+    )
+    start = datetime(2027, 1, 1, 9, tzinfo=UTC)
+    assert recurrence.first(text, start, 0, 12) == [
+        datetime(
+            year, month, min(day, calendar.monthrange(year, month)[1]), 9, tzinfo=UTC
+        )
+        for year in range(2027, 2027 + 3 * interval, interval)
+        for month in (1, 2, 4, 7)
+    ]
+
+
+@pytest.mark.parametrize(
     ("text", "kind", "stored"),
     [
         ("FREQ=MONTHLY;BYDAY=2MO", "task", "RRULE:FREQ=MONTHLY;BYDAY=2MO"),
+        ("FREQ=HOURLY;INTERVAL=4", "task", "RRULE:FREQ=HOURLY;INTERVAL=4"),
         ("RRULE:FREQ=HOURLY;BYHOUR=17,9", "event", "RRULE:FREQ=HOURLY;BYHOUR=17,9"),
         (
             "RRULE:FREQ=WEEKLY;BYDAY=MO\nRDATE;VALUE=DATE:20261224\n"
@@ -35,7 +59,7 @@ def test_normalize_writes_canonical_lines(text, kind, stored):
 @pytest.mark.parametrize(
     ("text", "kind"),
     [
-        ("FREQ=HOURLY", "task"),
+        ("FREQ=MINUTELY", "task"),
         ("FREQ=DAILY;BYHOUR=9", "task"),
         ("FREQ=MINUTELY", "event"),
         ("FREQ=DAILY;BYMINUTE=5", "event"),

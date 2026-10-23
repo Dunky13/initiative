@@ -2,13 +2,12 @@ import { X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { DocumentLink } from "@/components/auth/LegalNotice";
+import { PrivacyLink } from "@/components/auth/LegalNotice";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useConsent } from "@/hooks/useConsent";
-import { useLegalIndex } from "@/hooks/useLegalDocuments";
 import { useServer } from "@/hooks/useServer";
 import { captchaProvider } from "@/lib/captchaProviders";
 import { type ConsentCategory, dismissReopenedConsent, recordConsent } from "@/lib/consent";
@@ -40,7 +39,6 @@ export const CookieConsent = () => {
   const { t } = useTranslation(["legal", "common"]);
   const { isNativePlatform } = useServer();
   const { captcha, cookieCategories, cookieConsentEnabled, isLoading } = useAppConfig();
-  const { enabled: hasLegalDocuments } = useLegalIndex();
   const { unanswered, reopened, granted } = useConsent();
 
   // Somebody reopening this came to change something, so it opens on the
@@ -120,9 +118,7 @@ export const CookieConsent = () => {
                 {t("legal:cookies.readMore")}
               </a>
               {/* Only where the deployment has a policy of its own to read. */}
-              {hasLegalDocuments ? (
-                <DocumentLink slug="privacy">{t("legal:privacyTitle")}</DocumentLink>
-              ) : null}
+              <PrivacyLink />
             </p>
           </div>
           {/* Closing is only offered where there is already an answer to leave

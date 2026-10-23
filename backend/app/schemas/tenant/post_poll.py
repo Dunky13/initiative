@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, List, Optional
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, ConfigDict, Field, model_validator
 
 from app.models.tenant.post_poll import (
     MAX_POLL_OPTION_CHARS,
@@ -61,7 +61,7 @@ class PollWrite(SanitizedBaseModel):
     #: When voting stops. Omitted leaves it open for as long as the notice
     #: stands; a time that has already passed is refused rather than creating a
     #: poll nobody can answer.
-    closes_at: Optional[datetime] = None
+    closes_at: Optional[AwareDatetime] = None
 
 
 class PollVoteWrite(SanitizedBaseModel):

@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from app.core.config import settings
+from app.core.config import CAPACITOR_NATIVE_ORIGINS, settings
 from app.services import captcha_config
 from app.services.captcha_config import ResolvedCaptchaConfig
 from app.core.version import get_min_desktop_version, get_min_native_version
@@ -77,11 +77,10 @@ async def test_config_reports_no_captcha_unless_it_is_fully_configured(
 
 async def test_config_exposes_billing_url_when_set(client: AsyncClient, monkeypatch):
     """With a URL configured, the SPA gets the base URL to build its
-    link-out buttons. The operator route reports itself unavailable until its
-    own signing material is configured."""
+    link-out buttons. The operator route reports itself unavailable until the
+    handoff key is configured."""
     monkeypatch.setattr(settings, "BILLING_URL", "https://billing.example.com")
-    monkeypatch.setattr(settings, "BILLING_SUPPORT_HANDOFF_SECRET", None)
-    monkeypatch.setattr(settings, "BILLING_SUPPORT_HANDOFF_KID", None)
+    monkeypatch.setattr(settings, "HANDOFF_SIGNING_PRIVATE_KEY_PEM", None)
 
     response = await client.get("/api/v1/config")
 
@@ -92,16 +91,17 @@ async def test_config_exposes_billing_url_when_set(client: AsyncClient, monkeypa
         "manages_plans": False,
         "insights": False,
         "contracts": False,
+        "directory": False,
+        "control": False,
     }
 
 
 async def test_config_reports_operator_handoff_when_signing_configured(
-    client: AsyncClient, monkeypatch
+    client: AsyncClient, monkeypatch, handoff_signing_key
 ):
-    """Both halves present ⇒ the admin Guilds tab may render its control."""
+    """A portal and the handoff key ⇒ the admin Guilds tab may render its
+    control."""
     monkeypatch.setattr(settings, "BILLING_URL", "https://billing.example.com")
-    monkeypatch.setattr(settings, "BILLING_SUPPORT_HANDOFF_SECRET", "shared-secret")
-    monkeypatch.setattr(settings, "BILLING_SUPPORT_HANDOFF_KID", "k1")
 
     response = await client.get("/api/v1/config")
 
@@ -152,6 +152,38 @@ async def test_config_captcha_exposes_provider_and_site_key(
     assert body["captcha"] == {"provider": provider, "site_key": "public-site-key"}
     # Belt-and-braces: the secret must never appear in the public payload.
     assert "very-private-secret" not in response.text
+
+
+async def test_captcha_frame_draws_the_widget_for_the_apps(
+    client: AsyncClient, monkeypatch
+):
+    """The apps frame this page, so it carries the site key and the provider's
+    script, may be framed by the apps alone, and never names the secret."""
+
+    async def _resolved() -> ResolvedCaptchaConfig:
+        return ResolvedCaptchaConfig(
+            provider="turnstile",
+            site_key="public-site-key",
+            secret_key="very-private-secret",
+        )
+
+    monkeypatch.setattr(captcha_config, "ensure_captcha_config_fresh", _resolved)
+
+    response = await client.get("/api/v1/config/captcha")
+
+    assert response.status_code == 200
+    assert "public-site-key" in response.text
+    assert "https://challenges.cloudflare.com/turnstile/v0/api.js" in response.text
+    assert "very-private-secret" not in response.text
+    policy = response.headers["content-security-policy"]
+    assert "frame-ancestors " + " ".join(CAPACITOR_NATIVE_ORIGINS) in policy
+    assert "x-frame-options" not in response.headers
+
+
+async def test_captcha_frame_is_absent_without_a_captcha(client: AsyncClient):
+    response = await client.get("/api/v1/config/captcha")
+
+    assert response.status_code == 404
 
 
 async def test_config_says_cookie_consent_and_guests_are_off_by_default(

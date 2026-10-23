@@ -129,6 +129,10 @@
   "tagTasks": {
     "loadError": "Impossible de charger les tâches."
   },
+  "ai": {
+    "fromComments_one": "Rédigé sans le commentaire de la tâche, qui ne tenait pas.",
+    "fromComments_other": "Rédigé à partir des {{read}} commentaires les plus récents sur {{count}}."
+  },
   "checklist": {
     "title": "Checklist",
     "progressLabel": "Progression de la checklist",
@@ -219,6 +223,51 @@
     "tagsPlaceholder": "Ajouter des étiquettes",
     "sections": {
       "schedule": "Planification"
+    }
+  },
+  "smartTitle": {
+    "read": "Lu dans le titre",
+    "due": "Échéance {{when}}",
+    "priority": "Priorité {{priority}}",
+    "keep": "Garder « {{text}} » dans le titre",
+    "words": {
+      "today": "aujourd'hui",
+      "tomorrow": "demain",
+      "next": "prochain|prochaine",
+      "nextAfter": "prochain|prochaine",
+      "in": "dans|d'ici",
+      "every": "chaque|tous les|toutes les",
+      "other": "",
+      "lead": "pour|le|avant|pour le|avant le",
+      "at": "à",
+      "one": "un|une",
+      "of": "",
+      "ordinal": "er|e|ème",
+      "day": "jour|jours",
+      "week": "semaine|semaines",
+      "month": "mois",
+      "year": "an|ans|année|années",
+      "weekday": "jour ouvré|jours ouvrés|jour ouvrable|jours ouvrables",
+      "noon": "midi",
+      "midnight": "minuit",
+      "am": "",
+      "pm": "",
+      "oclock": "h|heure|heures",
+      "me": "moi|me",
+      "weekend": "week-end|week-ends|weekend|weekends",
+      "hour": "heure|heures",
+      "first": "premier|première|premiers|premières",
+      "second": "deuxième|deuxièmes|second|seconde",
+      "third": "troisième|troisièmes",
+      "fourth": "quatrième|quatrièmes",
+      "fifth": "cinquième|cinquièmes",
+      "last": "dernier|dernière|derniers|dernières",
+      "ofTheMonth": "du mois|de chaque mois|de tous les mois",
+      "ofEveryMonth": "de chaque mois|de tous les mois|chaque mois|mensuel",
+      "and": "et|&",
+      "the": "le|la|les",
+      "until": "jusqu'au|jusqu'à",
+      "times": "fois"
     }
   }
 }

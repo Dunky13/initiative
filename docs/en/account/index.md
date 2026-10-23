@@ -22,7 +22,6 @@ This section is about **your** settings.
 | **Notifications** | What you're told about, and where. See [Notifications](../guides/notifications.md). |
 | **Privacy** | Who can ask to message you, your connections, pending requests, accounts you've ignored, and whether your activity counts toward search ranking. See [Messages](../guides/messages.md#who-can-reach-you). |
 | **Security** | Every way you sign in: your password, [passkeys](passkeys.md) and [two-factor authentication](two-factor-authentication.md), showing only the ones your server offers. Also [where you're signed in](profile-and-preferences.md#where-youre-signed-in), and access keys. See [API keys & integrations](api-keys-and-integrations.md). |
-| **AI** | Your personal AI settings. Only appears if there's a connection for you to set up. See [AI features](ai-features.md). |
 | **Trash** | Things you recently deleted. |
 
 <div class="grid cards" markdown>
@@ -35,7 +34,7 @@ This section is about **your** settings.
 
 -   :material-robot-outline: __AI features__
 
-    Optional AI help, and bringing your own key.
+    Optional AI help, and where your text goes when you use it.
 
     [:octicons-arrow-right-24: AI features](ai-features.md)
 

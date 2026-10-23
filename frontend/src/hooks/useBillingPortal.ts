@@ -11,10 +11,28 @@ import { sellsOnThisDevice, useStoreSellingAnswer } from "@/lib/storeSelling";
  *  subscription's management screen. */
 export type BillingPortalPage = "manage" | "upgrade";
 
+/** What a portal page opens on: a catalog tier picked beforehand (`plan`),
+ *  or a request to the deployment's owners for a plug-in its term has no
+ *  seat free for (`request`, with the listing's uid). */
+export interface BillingPortalQuery {
+  plan?: string;
+  request?: "plugin";
+  listing?: string;
+}
+
 /** The phone apps, which open the portal with `@capacitor/browser`. */
 const opensInBrowserSheet = (): boolean => {
   const platform = Capacitor.getPlatform();
   return platform === "ios" || platform === "android";
+};
+
+/** A tab opened now, inside the click, to send to the portal once the handoff
+ *  is minted; none in the phone apps, which open a browser sheet instead. */
+const blankTab = (): Window | null => {
+  if (opensInBrowserSheet()) return null;
+  const tab = window.open("about:blank", "_blank");
+  if (tab) tab.opener = null;
+  return tab;
 };
 
 /**
@@ -64,17 +82,24 @@ export const useBillingPortal = () => {
     [hasBilling]
   );
 
+  // No id of ours is in the address: the handoff in its fragment is what
+  // names the community to the portal.
   const pageUrl = useCallback(
-    (communityId: number, page: BillingPortalPage): string | null =>
-      billing
-        ? `${billing.url}/${page}?community=${communityId}&lang=${encodeURIComponent(lang)}`
-        : null,
+    (page: BillingPortalPage, query: BillingPortalQuery = {}): string | null => {
+      if (!billing) return null;
+      const params = new URLSearchParams({ lang });
+      for (const name of ["plan", "request", "listing"] as const) {
+        const value = query[name];
+        if (value) params.set(name, value);
+      }
+      return `${billing.url}/${page}?${params.toString()}`;
+    },
     [billing, lang]
   );
 
   const portalUrl = useCallback(
     async (communityId: number, page: BillingPortalPage): Promise<string | null> => {
-      const base = pageUrl(communityId, page);
+      const base = pageUrl(page);
       if (!base) return null;
       const { handoff_token } = await createCommunityBillingHandoff(communityId);
       return `${base}#handoff=${encodeURIComponent(handoff_token)}`;
@@ -82,17 +107,19 @@ export const useBillingPortal = () => {
     [pageUrl]
   );
 
-  const reserveTab = useCallback((): Window | null => {
-    if (!canSell || opensInBrowserSheet()) return null;
-    const tab = window.open("about:blank", "_blank");
-    if (tab) tab.opener = null;
-    return tab;
-  }, [canSell]);
+  const reserveTab = useCallback((): Window | null => (canSell ? blankTab() : null), [canSell]);
 
-  const openAddress = useCallback(
-    async (communityId: number, base: string, reserved?: Window | null) => {
-      if (!canSell) return;
-      const tab = reserved ?? reserveTab();
+  // `selling` false for a page that sells nothing (a request to the
+  // deployment's owners), which any device may open where there is a portal.
+  const open = useCallback(
+    async (
+      communityId: number,
+      base: string,
+      reserved: Window | null | undefined,
+      selling: boolean
+    ) => {
+      if (selling ? !canSell : !hasBilling) return;
+      const tab = reserved ?? (selling ? reserveTab() : blankTab());
       let url = base;
       try {
         const { handoff_token } = await createCommunityBillingHandoff(communityId);
@@ -110,16 +137,29 @@ export const useBillingPortal = () => {
       } else if (tab) tab.location.href = url;
       else window.open(url, "_blank", "noopener,noreferrer");
     },
-    [canSell, reserveTab]
+    [canSell, hasBilling, reserveTab]
   );
 
+  const openAddress = useCallback(
+    (communityId: number, base: string, reserved?: Window | null) =>
+      open(communityId, base, reserved, true),
+    [open]
+  );
+
+  /** `query` says what the page opens on (see {@link BillingPortalQuery}). A
+   *  request sells nothing, so it opens wherever there is a portal. */
   const openPortal = useCallback(
-    async (communityId: number, page: BillingPortalPage, reserved?: Window | null) => {
-      const base = pageUrl(communityId, page);
+    async (
+      communityId: number,
+      page: BillingPortalPage,
+      reserved?: Window | null,
+      query?: BillingPortalQuery
+    ) => {
+      const base = pageUrl(page, query);
       if (!base) return;
-      await openAddress(communityId, base, reserved);
+      await open(communityId, base, reserved, !query?.request);
     },
-    [openAddress, pageUrl]
+    [open, pageUrl]
   );
 
   return {

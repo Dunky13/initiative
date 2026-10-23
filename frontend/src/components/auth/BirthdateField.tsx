@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import { DocumentLink } from "@/components/auth/LegalNotice";
+import { PrivacyLink } from "@/components/auth/LegalNotice";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Label } from "@/components/ui/label";
 import { useAppConfig } from "@/hooks/useAppConfig";
@@ -62,7 +62,7 @@ export const BirthdateField = ({
         {billing ? (
           <>
             {" "}
-            <DocumentLink slug="privacy">{t("legal:privacyTitle")}</DocumentLink>
+            <PrivacyLink />
           </>
         ) : null}
       </p>

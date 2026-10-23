@@ -105,8 +105,10 @@ export const HomePage = () => {
   const controls = (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="min-w-0 flex-1">
-          {isLoaded ? (
+        {/* A real basis, not `flex-1`'s zero, so a narrow screen wraps the
+            buttons under the tabs rather than squeezing the tabs to nothing. */}
+        {isLoaded && showsBar ? (
+          <div className="min-w-0 shrink grow basis-64">
             <HomeViewTabs
               views={home.views}
               activeId={home.activeId}
@@ -118,9 +120,9 @@ export const HomePage = () => {
               onMove={home.move}
               onDelete={home.remove}
             />
-          ) : null}
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          </div>
+        ) : null}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {editing ? (
             <>
               <Button type="button" variant="outline" size="sm" onClick={() => setAdding(true)}>

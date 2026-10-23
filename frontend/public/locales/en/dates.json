@@ -1,6 +1,9 @@
 {
   "invalidRange": "The end date can't be before the start date.",
   "picker": {
+    "invalidEventRange": "The event must end after it starts.",
+    "invalidDate": "Enter a valid calendar date.",
+    "invalidLocalDateTime": "Choose a valid date and time. Times skipped or repeated when the clocks change need a time outside that interval.",
     "pickDate": "Pick a date",
     "pickDateTime": "Pick a date and time",
     "typeDate": "Type or pick a date",
@@ -82,6 +85,11 @@
     "onFirstWorkDay": "on the first weekday",
     "onLastWorkDay": "on the last weekday",
     "onFirstOf": "on the first {{weekdays}}",
-    "onLastOf": "on the last {{weekdays}}"
+    "onLastOf": "on the last {{weekdays}}",
+    "hour": "hour",
+    "hours": "hours",
+    "everyHour": "every hour",
+    "dailyLimit_one": "at most once per day",
+    "dailyLimit_other": "at most {{count}} times per day"
   }
 }

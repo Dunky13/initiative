@@ -288,6 +288,7 @@ CATEGORY_SPECS: Mapping[NotificationCategory, CategorySpec] = {
                 NotificationType.community_on_hold,
                 NotificationType.community_trial_ending,
                 NotificationType.community_trial_ended,
+                NotificationType.community_pause_reminder,
                 NotificationType.community_welcome,
                 NotificationType.access_grant_approved,
                 NotificationType.access_grant_denied,

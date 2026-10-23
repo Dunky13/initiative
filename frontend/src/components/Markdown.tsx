@@ -5,6 +5,7 @@ import type {
   MouseEvent,
   Ref,
 } from "react";
+import { useContext } from "react";
 import ReactMarkdown, { type ExtraProps, type Options } from "react-markdown";
 import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
@@ -12,6 +13,8 @@ import remarkGfm from "remark-gfm";
 import { LinkedMentionSpan, PlainMentionSpan } from "@/components/comments/MentionSpan";
 import { remarkMentions } from "@/components/comments/remarkCommentPlugins";
 import { ImageLightboxScope, InLink, ProseImage } from "@/components/markdown/ProseImage";
+import { ThemeContext } from "@/hooks/useTheme";
+import { releaseImageUrl } from "@/lib/releaseImages";
 import { isStoredUpload, remarkImageLinks, remarkLineBreaks } from "@/lib/remarkProse";
 import { resolveUploadUrl } from "@/lib/uploadUrl";
 import { cn } from "@/lib/utils";
@@ -20,6 +23,7 @@ import { cn } from "@/lib/utils";
 // DOM attribute — it is dropped before the rest of the props reach the element.
 type AnchorProps = ComponentPropsWithoutRef<"a"> & { node?: unknown };
 type ImageProps = ComponentProps<"img"> & ExtraProps;
+type ParagraphProps = ComponentPropsWithoutRef<"p"> & ExtraProps;
 
 function handleHashClick(e: MouseEvent<HTMLAnchorElement>) {
   const href = e.currentTarget.getAttribute("href");
@@ -94,6 +98,74 @@ const pictureWith = (className?: string) =>
     );
   };
 
+/** A screenshot in the release notes, in the theme the app is drawn in,
+ *  loaded from the docs site (see `lib/releaseImages`). */
+function ReleasePicture({
+  src,
+  alt,
+  title,
+  fill = false,
+}: {
+  src: string;
+  alt?: string;
+  title?: string;
+  fill?: boolean;
+}) {
+  const dark = useContext(ThemeContext)?.resolvedTheme === "dark";
+  return (
+    <ProseImage
+      src={releaseImageUrl(src, dark)}
+      alt={alt ?? ""}
+      title={title}
+      fill={fill}
+      className={fill ? undefined : "rounded-md border border-border"}
+    />
+  );
+}
+
+function ReleaseImage({ src, alt, title }: ImageProps) {
+  if (typeof src !== "string" || !src) return null;
+  return <ReleasePicture src={src} alt={alt} title={title} />;
+}
+
+/** Pictures on lines of their own, two or more, scroll sideways as a strip of
+ *  tiles with their count in its corner, each opening full size. Anything
+ *  else is a paragraph. */
+function ReleaseParagraph({ node, children, ...props }: ParagraphProps) {
+  const parts = node?.children ?? [];
+  const pictures = parts.flatMap((part) =>
+    part.type === "element" && part.tagName === "img" && typeof part.properties.src === "string"
+      ? [{ src: part.properties.src, alt: String(part.properties.alt ?? "") }]
+      : []
+  );
+  const onlyPictures = parts.every(
+    (part) =>
+      (part.type === "element" && part.tagName === "img") ||
+      (part.type === "text" && !part.value.trim())
+  );
+  if (pictures.length < 2 || !onlyPictures) return <p {...props}>{children}</p>;
+  return (
+    <div className="relative">
+      <div className="scrollbar-thin flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+        {pictures.map((picture) => (
+          <div
+            key={picture.src}
+            className="h-40 w-64 shrink-0 snap-start overflow-hidden rounded-lg border bg-muted p-1"
+          >
+            <ReleasePicture {...picture} fill />
+          </div>
+        ))}
+      </div>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-2 right-2 rounded-full bg-background/90 px-2 py-0.5 font-medium text-foreground text-xs shadow-sm"
+      >
+        {pictures.length}
+      </span>
+    </div>
+  );
+}
+
 /** What every surface shares. Anything that can be wider than its container
  *  is wrapped or scrolled, so rendered markdown never stretches its card. */
 const BASE_CLASS =
@@ -115,17 +187,24 @@ interface Surface {
   lineBreaks: boolean;
   /** Headings carry ids, so a `#heading` link scrolls to them. */
   headingIds: boolean;
+  /** How a paragraph is drawn, when the surface draws some differently. */
+  paragraph?: ComponentType<ParagraphProps>;
 }
 
+/** Descriptions and documents: the long form, in the page's type scale. */
+const DOCUMENT = {
+  prose: `${PAGE_TONE_CLASS} text-muted-foreground text-sm **:leading-relaxed [&_blockquote]:pl-3 [&_code]:font-mono [&_code]:wrap-break-word [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_h4]:text-sm [&_h5]:font-medium [&_h5]:text-sm [&_h6]:text-xs [&_img]:h-auto [&_img]:max-w-full [&_li]:mt-1 [&_ol]:pl-6 [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:wrap-break-word [&_pre_code]:text-inherit [&_table]:max-w-full [&_ul]:pl-6`,
+  spacing: "space-y-3 [&_h1]:mt-4 [&_h2]:mt-3 [&_h3]:mt-3 [&_h4]:mt-2 [&_h5]:mt-2 [&_h6]:mt-2",
+  picture: pictureWith(),
+  lineBreaks: false,
+  headingIds: true,
+} satisfies Surface;
+
 const SURFACES = {
-  /** Descriptions and documents: the long form, in the page's type scale. */
-  document: {
-    prose: `${PAGE_TONE_CLASS} text-muted-foreground text-sm **:leading-relaxed [&_blockquote]:pl-3 [&_code]:font-mono [&_code]:wrap-break-word [&_h1]:text-xl [&_h2]:text-lg [&_h3]:text-base [&_h4]:text-sm [&_h5]:font-medium [&_h5]:text-sm [&_h6]:text-xs [&_img]:h-auto [&_img]:max-w-full [&_li]:mt-1 [&_ol]:pl-6 [&_pre]:max-w-full [&_pre]:whitespace-pre-wrap [&_pre]:wrap-break-word [&_pre_code]:text-inherit [&_table]:max-w-full [&_ul]:pl-6`,
-    spacing: "space-y-3 [&_h1]:mt-4 [&_h2]:mt-3 [&_h3]:mt-3 [&_h4]:mt-2 [&_h5]:mt-2 [&_h6]:mt-2",
-    picture: pictureWith(),
-    lineBreaks: false,
-    headingIds: true,
-  },
+  document: DOCUMENT,
+  /** Release notes: a document whose pictures are screenshots that ship with
+   *  the release, drawn in the app's theme. */
+  release: { ...DOCUMENT, picture: ReleaseImage, paragraph: ReleaseParagraph },
   /** A comment: short prose typed in a box, headings kept to body size. */
   comment: {
     prose: `${PAGE_TONE_CLASS} text-sm [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_h1]:text-base [&_h2]:text-base [&_h3]:text-sm [&_h4]:text-sm [&_h5]:font-semibold [&_h5]:text-sm [&_h6]:text-sm [&_li]:mt-0.5 [&_ol]:pl-5 [&_ul]:pl-5`,
@@ -206,6 +285,7 @@ export const Markdown = ({
     a: disableLinks ? PlainAnchor : MarkdownAnchor,
     img: compact || !preset.picture ? ImageName : preset.picture,
     ...(mentions ? { span: disableLinks ? PlainMentionSpan : LinkedMentionSpan } : {}),
+    ...(preset.paragraph && !compact ? { p: preset.paragraph } : {}),
   };
 
   const rendered = (

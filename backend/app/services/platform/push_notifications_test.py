@@ -61,6 +61,7 @@ _IN_APP_ONLY = {
     # errand as a hold, told the same way.
     NotificationType.community_trial_ending,
     NotificationType.community_trial_ended,
+    NotificationType.community_pause_reminder,
     NotificationType.community_welcome,
     # A plug-in asking a member to consent: answered on the plug-in's settings, where
     # it waits until they get to it.

@@ -43,7 +43,12 @@ import { useCommunities } from "@/hooks/useCommunities";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { useReadOnOpen } from "@/hooks/useNotifications";
 import { useRecordOpen } from "@/hooks/usePersonalItems";
-import { useProject, useProjectTaskStatuses, useWritableProjects } from "@/hooks/useProjects";
+import {
+  useProject,
+  useProjectTaskStatuses,
+  useProjectTaskTypes,
+  useWritableProjects,
+} from "@/hooks/useProjects";
 import {
   useDeleteTask,
   useDuplicateTask,
@@ -109,6 +114,7 @@ export const TaskEditPage = () => {
   }, [taskProjectId, projectId]);
 
   const taskStatusesQuery = useProjectTaskStatuses(projectId ?? null);
+  const taskTypesQuery = useProjectTaskTypes(projectId ?? null);
   // The task's project's layouts say how its detail is laid out, and a move
   // takes the detail to its new project's. A set that cannot be read draws
   // the detail as shipped.
@@ -430,11 +436,14 @@ export const TaskEditPage = () => {
       <DetailLayoutView
         detail={TASK_DETAIL}
         item={task}
-        layout={detailLayoutOf(layoutsQuery.data, "task") as StoredRegions | null}
+        layout={
+          detailLayoutOf(layoutsQuery.data, "task", task.task_type_id) as StoredRegions | null
+        }
         context={{
           readOnly: isReadOnly,
           readOnlyMessage,
           statuses: taskStatusesQuery.data ?? [],
+          types: taskTypesQuery.data ?? [],
           isFull: columnLimits.isFull,
           initiativeId: project?.initiative_id ?? null,
           currentUserId: currentUser?.id,

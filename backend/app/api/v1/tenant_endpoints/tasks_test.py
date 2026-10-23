@@ -13,6 +13,7 @@ Tests the task API endpoints at /api/v1/tasks including:
 """
 
 import json
+from typing import Any
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
@@ -22,7 +23,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from sqlmodel import select
 
-from app.services.tenant.task_creation import advance_recurrence_if_needed
+from app.services.tenant.task_types import get_default_type
+from app.services.tenant.task_series import advance_recurrence_if_needed
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.task import Task, TaskStatusCategory
 from app.models.tenant.resource_grant import ResourceAccessLevel
@@ -47,7 +49,7 @@ from app.testing.factories import (
     create_tag,
     create_user,
 )
-from app.testing import create_resource_grant, route_as
+from app.testing import create_resource_grant, guild_of, route_as
 
 LOS_ANGELES = ZoneInfo("America/Los_Angeles")
 
@@ -58,13 +60,16 @@ async def _create_task(session, project, title="Test Task", checklist=None):
     from app.services.tenant import task_statuses as task_statuses_service
 
     # Ensure default statuses exist and get the default status
-    await task_statuses_service.ensure_default_statuses(session, project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, project.id, locale="en"
+    )
     status = await task_statuses_service.get_default_status(session, project.id)
 
     task = Task(
         title=title,
         project_id=project.id,
         task_status_id=status.id,
+        task_type_id=(await get_default_type(session, project.id)).id,
         checklist=checklist or [],
     )
     session.add(task)
@@ -163,6 +168,58 @@ async def test_list_tasks_sorts_by_status_and_by_tag(
     assert await titles("status_position", "asc") == ["Backlog", "Untagged", "Done"]
     assert await titles("tag_name", "asc") == ["Backlog", "Done", "Untagged"]
     assert await titles("tag_name", "desc") == ["Done", "Backlog", "Untagged"]
+
+
+async def test_task_groups_are_the_lists_in_its_order_with_each_tasks(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """The groups of the filtered list in the order it shows them, a closed
+    vocabulary's whether or not a task is in them, and each task's groups: a
+    task under each of its tags, an untagged one in none."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    both = await create_task(session, a.project, title="Both")
+    untagged = await create_task(session, a.project, title="Untagged")
+    beta = await create_tag(session, a.guild, name="Beta")
+    alpha = await create_tag(session, a.guild, name="alpha")
+    for tag in (beta, alpha):
+        await assign_tag(session, both, tag)
+    await session.commit()
+
+    async def groups(**params) -> dict:
+        response = await client.get(
+            a.g("/tasks/groups"), params=params, headers=a.headers
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    by_tag = await groups(group_by="tag_ids")
+    assert by_tag["groups"] == [
+        {"key": str(alpha.id), "label": "alpha"},
+        {"key": str(beta.id), "label": "Beta"},
+        {"key": "", "label": None},
+    ]
+    assert by_tag["rows"] == {str(both.id): [str(beta.id), str(alpha.id)]}
+    assert str(untagged.id) not in by_tag["rows"]
+
+    by_priority = await groups(group_by="priority")
+    assert [g["key"] for g in by_priority["groups"]] == [
+        "urgent",
+        "high",
+        "medium",
+        "low",
+    ]
+
+    by_week = await groups(group_by="created_at", bucket="week")
+    assert len(by_week["groups"]) == 1  # both made this week
+
+    for refused in ({"group_by": "title"}, {"group_by": "created_at"}):
+        response = await client.get(
+            a.g("/tasks/groups"), params=refused, headers=a.headers
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "QUERY_INVALID_GROUPING"
 
 
 async def test_list_tasks_hides_a_project_the_member_holds_no_grant_on(
@@ -332,7 +389,9 @@ async def test_create_task(client: AsyncClient, session: AsyncSession, acting_us
     )
 
     # Create a task status
-    await task_statuses_service.ensure_default_statuses(session, a.project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, a.project.id, locale="en"
+    )
     status = await task_statuses_service.get_default_status(session, a.project.id)
     await session.commit()
 
@@ -399,7 +458,9 @@ async def test_create_task_with_status(
     a = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
     )
-    await task_statuses_service.ensure_default_statuses(session, a.project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, a.project.id, locale="en"
+    )
     statuses = await task_statuses_service.list_statuses(session, a.project.id)
     default_status = await task_statuses_service.get_default_status(
         session, a.project.id
@@ -547,7 +608,9 @@ async def test_create_task_requires_project_access(
 
     from app.services.tenant import task_statuses as task_statuses_service
 
-    await task_statuses_service.ensure_default_statuses(session, owner.project.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, owner.project.id, locale="en"
+    )
     status = await task_statuses_service.get_default_status(session, owner.project.id)
     await session.commit()
 
@@ -851,7 +914,9 @@ async def test_move_task_to_different_project(
 
     from app.services.tenant import task_statuses as task_statuses_service
 
-    await task_statuses_service.ensure_default_statuses(session, project2.id)
+    await task_statuses_service.ensure_default_statuses(
+        session, project2.id, locale="en"
+    )
     target_status = await task_statuses_service.get_default_status(session, project2.id)
     await session.commit()
 
@@ -1499,7 +1564,7 @@ async def test_filter_tasks_by_status(
 
     # Create statuses
     statuses = await task_statuses_service.ensure_default_statuses(
-        session, a.project.id
+        session, a.project.id, locale="en"
     )
     todo_status = next(s for s in statuses if s.is_default)
     done_status = next(s for s in statuses if s.name == "Done")
@@ -1512,11 +1577,13 @@ async def test_filter_tasks_by_status(
         title="Todo Task",
         project_id=a.project.id,
         task_status_id=todo_status.id,
+        task_type_id=(await get_default_type(session, a.project.id)).id,
     )
     task2 = Task(
         title="Done Task",
         project_id=a.project.id,
         task_status_id=done_status.id,
+        task_type_id=(await get_default_type(session, a.project.id)).id,
     )
     session.add(task1)
     session.add(task2)
@@ -1558,7 +1625,7 @@ async def recurring_task_env(session: AsyncSession, acting_user):
             **actor_kwargs,
         )
         statuses = await task_statuses_service.ensure_default_statuses(
-            session, a.project.id
+            session, a.project.id, locale="en"
         )
         todo = next(status for status in statuses if status.is_default)
         done = next(status for status in statuses if status.name == "Done")
@@ -1620,6 +1687,7 @@ async def test_completing_a_recurring_task_opens_the_next_occurrence(
         title="Recurring Task",
         project_id=a.project.id,
         task_status_id=todo.id,
+        task_type_id=(await get_default_type(session, a.project.id)).id,
         due_date=due,
         recurrence=recurrence,
         recurrence_strategy=strategy,
@@ -1698,6 +1766,7 @@ async def test_rolling_recurrence_counts_from_the_users_own_calendar_day(
         title="Feed frogs",
         project_id=a.project.id,
         task_status_id=todo.id,
+        task_type_id=(await get_default_type(session, a.project.id)).id,
         due_date=due,
         recurrence=recurrence,
         recurrence_strategy="rolling",
@@ -1863,6 +1932,96 @@ async def test_a_task_changes_alone_or_with_its_series(
     assert (await live())[third_id]["due_date"].startswith("2026-05-08T12:00")
     await client.delete(a.g(f"/tasks/{third_id}?scope=all"), headers=a.headers)
     assert await live() == {}
+
+
+async def test_a_task_changes_type_alone_or_with_its_series(
+    client: AsyncClient, session: AsyncSession, recurring_task_env
+):
+    """A type changed on just this task stays on it, and the next task is the
+    series' type; changed on all, every task of the series is the new type."""
+    from app.services.tenant.task_types import list_types
+    from app.testing.factories import create_task
+
+    a, todo, done = await recurring_task_env()
+    task_type, bug, idea = (await list_types(session, a.project.id))[:3]
+    first = await create_task(
+        session,
+        a.project,
+        title="Water plants",
+        task_status_id=todo.id,
+        due_date=datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc),
+        recurrence="RRULE:FREQ=DAILY",
+    )
+    await session.commit()
+
+    async def patch(task_id: int, **body):
+        response = await client.patch(
+            a.g(f"/tasks/{task_id}"), headers=a.headers, json=body
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    async def types() -> dict[int, int]:
+        conditions = json.dumps(
+            [{"field": "project_id", "op": "eq", "value": a.project.id}]
+        )
+        listing = await client.get(
+            a.g(f"/tasks/?conditions={conditions}"), headers=a.headers
+        )
+        return {task["id"]: task["task_type_id"] for task in listing.json()["items"]}
+
+    await patch(first.id, task_type_id=bug.id, scope="this")
+    await patch(first.id, task_status_id=done.id)
+    (second_id,) = set(await types()) - {first.id}
+    assert await types() == {first.id: bug.id, second_id: task_type.id}
+
+    await patch(second_id, task_type_id=idea.id, scope="all")
+    assert set((await types()).values()) == {idea.id}
+
+
+async def test_a_series_type_deleted_since_leaves_the_task_its_own(
+    client: AsyncClient, session: AsyncSession, recurring_task_env
+):
+    """A type kept back by an edit of just this task that has since been
+    deleted is not one to make the next task with: it keeps the task's own."""
+    from app.services.tenant.task_types import list_types
+    from app.testing.factories import create_task
+
+    a, todo, done = await recurring_task_env()
+    task_type, bug, idea = (await list_types(session, a.project.id))[:3]
+    first = await create_task(
+        session,
+        a.project,
+        task_status_id=todo.id,
+        due_date=datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc),
+        recurrence="RRULE:FREQ=DAILY",
+    )
+    await session.commit()
+    at = a.g(f"/tasks/{first.id}")
+
+    changed = await client.patch(
+        at, headers=a.headers, json={"task_type_id": bug.id, "scope": "this"}
+    )
+    assert changed.status_code == 200, changed.text
+    # The series' type goes, and its tasks with it into another.
+    gone = await client.request(
+        "DELETE",
+        a.g(f"/projects/{a.project.id}/task-types/{task_type.id}"),
+        headers=a.headers,
+        json={"fallback_type_id": idea.id},
+    )
+    assert gone.status_code == 204, gone.text
+
+    completed = await client.patch(
+        at, headers=a.headers, json={"task_status_id": done.id}
+    )
+    assert completed.status_code == 200, completed.text
+    following = (
+        await session.exec(
+            select(Task).where(Task.project_id == a.project.id, Task.id != first.id)
+        )
+    ).one()
+    assert following.task_type_id == bug.id
 
 
 async def test_filter_tasks_by_date_window_group(
@@ -2374,3 +2533,238 @@ async def test_a_full_column_takes_no_more_from_a_person(
         [{"project_id": a.project.id, "status_id": full, "limit": 1, "count": 1}],
         [],
     ]
+
+
+async def _project_types(session: AsyncSession, project) -> dict:
+    from app.services.tenant import task_types as task_types_service
+
+    await route_session_to_guild(session, guild_of(project))
+    types = await task_types_service.ensure_default_types(
+        session, project.id, locale="en"
+    )
+    await session.commit()
+    return {task_type.name: task_type for task_type in types}
+
+
+async def test_a_new_task_is_its_projects_default_type_unless_it_names_one(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    types = await _project_types(session, a.project)
+
+    plain = await client.post(
+        a.g("/tasks/"),
+        json={"title": "Water the plants", "project_id": a.project.id},
+        headers=a.headers,
+    )
+    bug = await client.post(
+        a.g("/tasks/"),
+        json={
+            "title": "The tap leaks",
+            "project_id": a.project.id,
+            "task_type_id": types["Bug"].id,
+        },
+        headers=a.headers,
+    )
+
+    assert plain.status_code == 201, plain.text
+    assert plain.json()["task_type_id"] == types["Task"].id
+    assert bug.status_code == 201, bug.text
+    assert bug.json()["task_type_id"] == types["Bug"].id
+
+
+async def test_a_task_cannot_be_another_projects_type(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    elsewhere = await create_project(session, a.initiative, a.user, name="Elsewhere")
+    await _project_types(session, a.project)
+    foreign = (await _project_types(session, elsewhere))["Bug"]
+
+    response = await client.post(
+        a.g("/tasks/"),
+        json={
+            "title": "Lost",
+            "project_id": a.project.id,
+            "task_type_id": foreign.id,
+        },
+        headers=a.headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "TASK_TYPE_NOT_FOUND_FOR_PROJECT"
+
+
+async def test_changing_a_tasks_type_keeps_what_it_holds(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    types = await _project_types(session, a.project)
+    task = await create_task(
+        session,
+        a.project,
+        due_date=datetime(2026, 11, 2, tzinfo=timezone.utc),
+        checklist=[{"id": "a", "text": "Pack", "done": False}],
+    )
+    await session.commit()
+
+    response = await client.patch(
+        a.g(f"/tasks/{task.id}"),
+        json={"task_type_id": types["Idea"].id},
+        headers=a.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["task_type_id"] == types["Idea"].id
+    assert body["due_date"].startswith("2026-11-02")
+    assert [item["text"] for item in body["checklist"]] == ["Pack"]
+
+
+async def test_a_moved_task_keeps_a_type_of_the_same_name(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    elsewhere = await create_project(session, a.initiative, a.user, name="Elsewhere")
+    here = await _project_types(session, a.project)
+    there = await _project_types(session, elsewhere)
+    task = await create_task(session, a.project, task_type_id=here["Bug"].id)
+    await session.commit()
+
+    response = await client.post(
+        a.g(f"/tasks/{task.id}/move"),
+        json={"target_project_id": elsewhere.id},
+        headers=a.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["task_type_id"] == there["Bug"].id
+
+
+async def test_a_moved_task_with_no_same_named_type_takes_the_default(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    elsewhere = await create_project(session, a.initiative, a.user, name="Elsewhere")
+    here = await _project_types(session, a.project)
+    there = await _project_types(session, elsewhere)
+    here["Bug"].name = "Fehler"
+    session.add(here["Bug"])
+    await session.commit()
+    task = await create_task(session, a.project, task_type_id=here["Bug"].id)
+    await session.commit()
+
+    response = await client.post(
+        a.g(f"/tasks/{task.id}/move"),
+        json={"target_project_id": elsewhere.id},
+        headers=a.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["task_type_id"] == there["Task"].id
+
+
+async def test_a_duplicate_is_its_sources_type(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    types = await _project_types(session, a.project)
+    task = await create_task(session, a.project, task_type_id=types["Milestone"].id)
+    await session.commit()
+
+    response = await client.post(a.g(f"/tasks/{task.id}/duplicate"), headers=a.headers)
+
+    assert response.status_code == 201, response.text
+    assert response.json()["task_type_id"] == types["Milestone"].id
+
+
+async def test_a_new_task_starts_with_what_its_type_starts_one_with(
+    client: AsyncClient, session: AsyncSession, acting_user
+):
+    """Where whoever made the task left a field empty, its type fills it: a
+    description outline, checklist lines, a priority, and a repeat once there
+    is a date to count from. What they gave is kept."""
+    from app.services.tenant.task_types import ensure_default_types
+
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    await ensure_default_types(session, a.project.id, locale="en")
+    await session.commit()
+    chore = (
+        await client.post(
+            a.g(f"/projects/{a.project.id}/task-types/"),
+            json={
+                "name": "Chore",
+                "starting_values": {
+                    "description": "**Where**\n\n",
+                    "checklist": ["Gloves"],
+                    "priority": "low",
+                    "recurrence": "RRULE:FREQ=WEEKLY",
+                    "recurrence_strategy": "rolling",
+                },
+            },
+            headers=a.headers,
+        )
+    ).json()
+
+    async def make(**body: Any) -> dict[str, Any]:
+        response = await client.post(
+            a.g("/tasks/"),
+            headers=a.headers,
+            json={"project_id": a.project.id, "task_type_id": chore["id"], **body},
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    blank = await make(title="Gutters", due_date="2026-11-02T09:00:00Z")
+    assert blank["description"].startswith("**Where**")
+    assert [item["text"] for item in blank["checklist"]] == ["Gloves"]
+    assert blank["priority"] == "low"
+    assert blank["recurrence"].endswith("FREQ=WEEKLY")
+    assert blank["recurrence_strategy"] == "rolling"
+
+    given = await make(
+        title="Lawn",
+        description="Front only",
+        checklist=[{"text": "Mower"}],
+        priority="urgent",
+    )
+    assert given["description"] == "Front only"
+    assert [item["text"] for item in given["checklist"]] == ["Mower"]
+    assert given["priority"] == "urgent"
+    # No date to count a repeat from.
+    assert given["recurrence"] is None
+
+    # Sent empty is sent: a cleared outline, list or repeat stays cleared.
+    cleared = await make(
+        title="Hedge",
+        description=None,
+        checklist=[],
+        recurrence=None,
+        due_date="2026-11-02T09:00:00Z",
+    )
+    assert cleared["description"] in (None, "")
+    assert cleared["checklist"] == []
+    assert cleared["recurrence"] is None
+
+    # A type that starts nothing leaves a task as it was given.
+    plain = await client.post(
+        a.g("/tasks/"),
+        headers=a.headers,
+        json={"project_id": a.project.id, "title": "Plain"},
+    )
+    assert plain.json()["description"] in (None, "")
+    assert plain.json()["checklist"] == []

@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Optional
 
 from app.core.relationships import RelationshipType
+from app.core.task_types import MAX_TASK_TYPES
+from app.models.tenant.property import PropertyType
 from app.models.tenant.task import TaskPriority, TaskStatusCategory
 from app.services.import_engine.adf import adf_to_markdown
 from app.services.import_engine.jira_attachments import (
@@ -33,7 +35,7 @@ from app.services.import_engine.jira_attachments import (
     media_urls,
     unreferenced_section,
 )
-from app.services.import_engine.jira_fields import FieldMapper
+from app.services.import_engine.jira_fields import FieldMapper, _unique
 from app.services.import_engine.mapping import (
     DEFAULT_TAG_COLOR,
     POSITION_STEP,
@@ -243,10 +245,18 @@ def map_issue(
         mention=_collect_mention(mentioned),
     )
 
+    issue_type = fields.get("issuetype")
+    type_name = (
+        str(issue_type.get("name") or "").strip()
+        if isinstance(issue_type, dict)
+        else ""
+    )
+
     task: dict[str, Any] = {
         "title": summary,
         "description": rendered.markdown or None,
         "status_name": status_name,
+        **({"type_name": type_name} if type_name else {}),
         "priority": map_priority(fields.get("priority")).value,
         "position": position,
         "tags": [
@@ -563,6 +573,99 @@ def _timestamp(value: Any) -> Optional[str]:
         return None
 
 
+#: How a Jira issue type of a familiar name looks here: its page's shape, its
+#: icon and its colour. Any other is a plain task page. By lowercased name.
+_ISSUE_TYPE_LOOKS: dict[str, tuple[str, str, str]] = {
+    "task": ("plain", "square-check", "#94A3B8"),
+    "sub-task": ("plain", "list-tree", "#94A3B8"),
+    "subtask": ("plain", "list-tree", "#94A3B8"),
+    "story": ("plain", "book-open", "#34D399"),
+    "bug": ("fix", "bug", "#F87171"),
+    "epic": ("dates", "zap", "#A78BFA"),
+    "milestone": ("dates", "flag", "#A78BFA"),
+    "idea": ("discussion", "lightbulb", "#FBBF24"),
+}
+
+
+def issue_task_types(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The project's task types: one per issue type its issues are, in the
+    order they first appear, each named as Jira names it. The default is the
+    one called Task, or the one most issues are. None where no issue names a
+    type, so the project gets the ones a new project starts with. A project
+    holds only so many types, so past that the ones fewest issues are of are
+    left out (:data:`ISSUE_TYPE_PROPERTY` keeps every issue's)."""
+    counts: dict[str, int] = {}
+    names: dict[str, str] = {}
+    for task in tasks:
+        name = str(task.get("type_name") or "")
+        if name:
+            counts[name.lower()] = counts.get(name.lower(), 0) + 1
+            names.setdefault(name.lower(), name)
+    if not counts:
+        return []
+    default = "task" if "task" in counts else max(counts, key=lambda key: counts[key])
+    kept = set(
+        sorted(counts, key=lambda key: (key != default, -counts[key]))[:MAX_TASK_TYPES]
+    )
+    types = []
+    for position, key in enumerate(key for key in names if key in kept):
+        shape, icon, color = _ISSUE_TYPE_LOOKS.get(
+            key, ("plain", "square-check", "#94A3B8")
+        )
+        types.append(
+            {
+                "name": names[key],
+                "position": position,
+                "is_default": key == default,
+                "icon": icon,
+                "color": color,
+                "layout_preset": shape,
+            }
+        )
+    return types
+
+
+#: What a Jira issue's type is also kept as when the project has more issue
+#: types than it can hold as task types, so a task whose type is not among
+#: them still says what it was.
+ISSUE_TYPE_PROPERTY = "Issue type"
+
+
+def keep_issue_types(
+    tasks: list[dict[str, Any]],
+    types: list[dict[str, Any]],
+    definitions: list[dict[str, Any]],
+    issue_counts: dict[str, int],
+) -> None:
+    """Give every task its issue type as a select property, when some of the
+    project's issue types are not among ``types``."""
+    kept = {entry["name"].lower() for entry in types}
+    names = [str(task["type_name"]) for task in tasks if task.get("type_name")]
+    if all(name.lower() in kept for name in names):
+        return
+    name = _unique(ISSUE_TYPE_PROPERTY, {d["name"].lower() for d in definitions})
+    definitions.append(
+        {
+            "name": name,
+            "type": PropertyType.select.value,
+            "position": len(definitions),
+            "options": [
+                {"value": option, "label": option} for option in dict.fromkeys(names)
+            ],
+        }
+    )
+    issue_counts[name] = len(names)
+    for task in tasks:
+        if task.get("type_name"):
+            task["properties"].append(
+                {
+                    "property_name": name,
+                    "property_type": PropertyType.select.value,
+                    "value_text": task["type_name"],
+                }
+            )
+
+
 class ProjectMapper:
     """:func:`build_project_envelope` a page of issues at a time.
 
@@ -671,11 +774,17 @@ class ProjectMapper:
             # as ADF on others.
             description = str(project_fields["description"]).strip()
 
+        task_types = issue_task_types(self._tasks)
+        keep_issue_types(
+            self._tasks, task_types, fields.definitions, fields.issue_counts
+        )
+
         return MappedProject(
             envelope=build_envelope(
                 name=str(project_fields.get("name") or "Imported project"),
                 description=description or None,
                 statuses=self._statuses,
+                task_types=task_types,
                 tasks=self._tasks,
                 app_version=self._app_version,
                 source_url=self._site_url,

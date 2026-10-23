@@ -1,6 +1,9 @@
 {
   "invalidRange": "Das Enddatum darf nicht vor dem Startdatum liegen.",
   "picker": {
+    "invalidDate": "Geben Sie ein gültiges Kalenderdatum ein.",
+    "invalidEventRange": "Das Ereignis muss nach seinem Beginn enden.",
+    "invalidLocalDateTime": "Geben Sie ein gültiges Datum und eine gültige Uhrzeit ein. Wählen Sie bei einer Zeitumstellung eine Uhrzeit außerhalb des übersprungenen oder wiederholten Zeitraums.",
     "pickDate": "Datum auswählen",
     "pickDateTime": "Datum und Uhrzeit auswählen",
     "typeDate": "Datum eingeben oder auswählen",
@@ -82,6 +85,11 @@
     "onFirstWorkDay": "am ersten Werktag",
     "onLastWorkDay": "am letzten Werktag",
     "onFirstOf": "am ersten {{weekdays}}",
-    "onLastOf": "am letzten {{weekdays}}"
+    "onLastOf": "am letzten {{weekdays}}",
+    "hour": "Stunde",
+    "hours": "Stunden",
+    "everyHour": "jede Stunde",
+    "dailyLimit_one": "höchstens einmal pro Tag",
+    "dailyLimit_other": "höchstens {{count}} Mal pro Tag"
   }
 }

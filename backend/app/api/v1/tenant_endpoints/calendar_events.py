@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import AwareDatetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import recurrence
@@ -337,7 +338,7 @@ async def read_calendar_event(
     current_user: ActorUserDep,
     guild_context: CalendarsRead,
     include_deleted: IncludeDeletedDep = False,
-    occurrence: Optional[datetime] = Query(
+    occurrence: Optional[AwareDatetime] = Query(
         default=None,
         description="One occurrence of a repeating event, whose answers to show.",
     ),
@@ -426,7 +427,7 @@ async def duplicate_calendar_event(
     session: ActorSessionDep,
     current_user: ActorUserDep,
     guild_context: CalendarsWrite,
-    occurrence: Optional[datetime] = Query(
+    occurrence: Optional[AwareDatetime] = Query(
         default=None,
         description="One date of a repeating event, copied as an event of its own.",
     ),
@@ -621,33 +622,16 @@ async def _apply_update(
             setattr(event, field, value.strip() if field == "title" else value)
             updated = True
 
-    # An all-day event's days are UTC dates, whatever zone it was made in.
-    picked_in = "UTC" if event.all_day else event_in.tz
+    occurrences_service.repeat_edited(
+        event,
+        update_data.get("recurrence", ...),
+        old_recurrence=old_recurrence,
+        previous_start=previous_start,
+        previous_all_day=previous_all_day,
+        tz=event_in.tz,
+    )
     if "recurrence" in update_data:
-        event.recurrence, event.recurrence_shift = (
-            recurrence.stored(
-                update_data["recurrence"], event.start_at, picked_in, kind="event"
-            )
-            if update_data["recurrence"]
-            else (None, 0)
-        )
-        if event.recurrence:
-            # A rule written without skipped or extra starts keeps them.
-            event.recurrence = recurrence.kept_exceptions(
-                event.recurrence, old_recurrence
-            )
         updated = True
-    elif event.recurrence and (
-        event.start_at != previous_start or event.all_day != previous_all_day
-    ):
-        # The repeat moves with its start, its days kept as they were picked.
-        event.recurrence, event.recurrence_shift = recurrence.restarted(
-            event.recurrence,
-            event.recurrence_shift,
-            previous_start,
-            event.start_at,
-            picked_in,
-        )
 
     if update_data.get("tag_ids") is not None:
         await tags_service.set_entity_tags(
@@ -734,7 +718,7 @@ async def delete_calendar_event(
     current_user: Annotated[User, Depends(get_current_active_user)],
     guild_context: GuildContextDep,
     scope: Optional[OccurrenceScope] = Query(default=None),
-    occurrence: Optional[datetime] = Query(default=None),
+    occurrence: Optional[AwareDatetime] = Query(default=None),
 ) -> None:
     """Soft-delete a calendar event. Requires write access on the calendar.
 
@@ -959,7 +943,7 @@ async def set_attendees(
     current_user: ActorUserDep,
     guild_context: CalendarsWrite,
     scope: Optional[OccurrenceScope] = Query(default=None),
-    occurrence: Optional[datetime] = Query(default=None),
+    occurrence: Optional[AwareDatetime] = Query(default=None),
 ) -> CalendarEventRead:
     """Set attendees. Requires write access on the calendar.
 
