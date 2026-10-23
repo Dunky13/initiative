@@ -122,6 +122,7 @@ describe("FocusSummary", () => {
     const completed = screen.getByText("Ship the migration");
     expect(completed).toBeInTheDocument();
     expect(completed).toHaveClass("text-muted-foreground");
+    expect(completed).not.toHaveClass("line-through");
     expect(screen.getByText("1 of 3 done")).toBeInTheDocument();
   });
 
@@ -496,7 +497,9 @@ describe("FocusSummary", () => {
     renderFocus({ pins: [{ community_id: 1, task_id: 55 }] });
 
     if (today) {
-      expect(await screen.findByText(title)).toHaveClass("text-muted-foreground");
+      const finished = await screen.findByText(title);
+      expect(finished).toHaveClass("text-muted-foreground");
+      expect(finished).not.toHaveClass("line-through");
       expect(screen.getByText("1 of 1 done")).toBeInTheDocument();
     } else {
       expect(await screen.findByText(EMPTY)).toBeInTheDocument();
