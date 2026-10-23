@@ -190,10 +190,7 @@ export const EntityCard = ({
         {mark}
       </div>
       <span
-        className={cn(
-          "max-w-[75%] shrink-0 truncate text-sm",
-          settled && "text-muted-foreground line-through"
-        )}
+        className={cn("max-w-[75%] shrink-0 truncate text-sm", settled && "text-muted-foreground")}
       >
         {title}
       </span>
@@ -223,7 +220,7 @@ export const EntityCard = ({
               <h3
                 className={cn(
                   "line-clamp-2 font-semibold text-sm leading-snug",
-                  settled ? "text-muted-foreground line-through" : "text-card-foreground"
+                  settled ? "text-muted-foreground" : "text-card-foreground"
                 )}
               >
                 {title}
