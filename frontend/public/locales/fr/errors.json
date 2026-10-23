@@ -783,5 +783,6 @@
   "DEMO_LINK_EXPIRY_INVALID": "Un lien de démonstration ne peut pas se terminer dans le passé.",
   "INVALID_RECURRENCE_LIMIT": "Un maximum quotidien nécessite une répétition horaire après achèvement et une date d’échéance. Saisissez un maximum entier de 1 à 24, ou laissez le champ vide.",
   "TASK_PARENT_IS_PART": "Une tâche ne peut pas faire partie d’elle-même ni de l’une de ses sous-tâches.",
-  "CHECKLIST_ITEM_UNTITLED": "Cet élément ne nomme que des personnes ou des liens : il ne laisse aucun titre pour une tâche."
+  "CHECKLIST_ITEM_UNTITLED": "Cet élément ne nomme que des personnes ou des liens : il ne laisse aucun titre pour une tâche.",
+  "CHECKLIST_ITEM_CHANGED": "Cet élément a changé pendant qu’il devenait une tâche. Vérifiez-le et réessayez."
 }

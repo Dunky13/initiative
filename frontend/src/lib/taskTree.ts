@@ -53,3 +53,14 @@ export const nestTaskRows = (rows: readonly TaskGroupRow[]): TaskTreeRow[] => {
 /** Every row of a tree, each before its parts, as the table draws them. */
 export const flattenTaskTree = (rows: readonly TaskTreeRow[]): TaskTreeRow[] =>
   rows.flatMap((row) => [row, ...flattenTaskTree(row.subRows ?? [])]);
+
+/** The task each row of a tree is listed under, by task id; null at the top. */
+export const treeParents = (rows: readonly TaskTreeRow[]): Map<number, number | null> => {
+  const parents = new Map<number, number | null>();
+  const visit = (row: TaskTreeRow, parent: number | null) => {
+    parents.set(row.id, parent);
+    for (const part of row.subRows ?? []) visit(part, row.id);
+  };
+  for (const row of rows) visit(row, null);
+  return parents;
+};

@@ -170,8 +170,9 @@ def toggle_params(*, task_id: int, item_id: str, done: bool, now: Any) -> dict:
 
 
 #: Takes one item out, matching it by id and leaving the rest of the array in
-#: its order. As with :data:`_TOGGLE`, ``WHERE`` matches nothing when the task
-#: holds no such item, so a line ticked or edited meanwhile is kept as it is.
+#: its order. ``WHERE`` matches nothing unless the task still holds the item as
+#: :func:`remove_params` was given it, so a line ticked or reworded meanwhile is
+#: kept as it is.
 _REMOVE = text(
     """
     UPDATE tasks
@@ -193,15 +194,22 @@ _REMOVE = text(
 
 
 def remove_statement() -> TextClause:
-    """The single statement that takes one item out. Bind ``task_id``,
-    ``item_id`` and ``now``; :func:`remove_params` builds the rest."""
+    """The single statement that takes one item out. :func:`remove_params`
+    binds it."""
     return _REMOVE
 
 
-def remove_params(*, task_id: int, item_id: str, now: Any) -> dict:
+def remove_params(*, task_id: int, item: dict[str, Any], now: Any) -> dict:
+    """Bind :func:`remove_statement` to take ``item`` out of the task's list,
+    only while the item still reads as it does here."""
+    held = {
+        "id": item["id"],
+        "text": item.get("text", ""),
+        "done": bool(item.get("done")),
+    }
     return {
         "task_id": task_id,
-        "item_id": item_id,
+        "item_id": held["id"],
         "now": now,
-        "probe": json.dumps([{"id": item_id}]),
+        "probe": json.dumps([held]),
     }

@@ -1279,15 +1279,15 @@ async def promote_checklist_item(
     now = datetime.now(timezone.utc)
     removed = await session.exec(
         checklist_service.remove_statement(),
-        params=checklist_service.remove_params(
-            task_id=parent.id, item_id=item_id, now=now
-        ),
+        params=checklist_service.remove_params(task_id=parent.id, item=item, now=now),
     )
     if removed.one_or_none() is None:
+        # Ticked, reworded or removed since it was read: the task made from it
+        # would say something the list no longer does.
         await session.rollback()
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ChecklistMessages.ITEM_NOT_FOUND,
+            status_code=status.HTTP_409_CONFLICT,
+            detail=ChecklistMessages.ITEM_CHANGED,
         )
     await session.commit()
     # The statement wrote behind the ORM's back, so the loaded row is stale.

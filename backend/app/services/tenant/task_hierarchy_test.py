@@ -11,6 +11,7 @@ from app.core.search import SearchEntityType
 from app.models.platform.guild import CommunityRole
 from app.models.tenant.relationship import EntityRelationship
 from app.models.tenant.task import TaskStatusCategory
+from app.services.tenant import task_checklist as checklist_service
 from app.services.tenant.task_hierarchy import title_from_line
 from app.testing import route_session_to_guild
 from app.testing.factories import (
@@ -176,6 +177,27 @@ async def test_a_task_is_not_put_under_its_own_part(
     assert await _live_parents(session, a.guild.id, top.id) == []
 
 
+async def test_a_loop_is_refused_however_deep_the_chain(
+    client: AsyncClient, acting_user, session
+):
+    """Past the ten hops a relationships walk stops at."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    chain = [await create_task(session, a.project) for _ in range(13)]
+    for whole, part in zip(chain, chain[1:]):
+        await _part_of(session, a.guild, part, whole)
+
+    response = await client.patch(
+        a.g(f"/tasks/{chain[0].id}"),
+        headers=a.headers,
+        json={"parent_task_id": chain[-1].id},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == TaskMessages.PARENT_IS_PART
+
+
 async def test_a_parent_in_another_initiative_is_refused(
     client: AsyncClient, acting_user, session
 ):
@@ -277,6 +299,43 @@ async def test_promoting_a_line_with_mentions_keeps_its_words(
     assert response.json()["title"] == "Call about billing"
     assert response.json()["description"] == line
     assert response.json()["task_status"]["category"] != "done"
+
+
+async def test_a_line_changed_since_it_was_read_is_kept(session, acting_user):
+    """The removal matches the line as the task was made from it, so a tick or
+    a rewording that landed in between is not thrown away."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    items = checklist_items("Concept", "Script")
+    post = await create_task(session, a.project, checklist=items)
+    read = dict(items[1])
+    await session.exec(
+        checklist_service.toggle_statement(),
+        params=checklist_service.toggle_params(
+            task_id=post.id,
+            item_id=read["id"],
+            done=True,
+            now=datetime.now(timezone.utc),
+        ),
+    )
+
+    removed = await session.exec(
+        checklist_service.remove_statement(),
+        params=checklist_service.remove_params(
+            task_id=post.id, item=read, now=datetime.now(timezone.utc)
+        ),
+    )
+    assert removed.one_or_none() is None
+
+    read["done"] = True
+    removed = await session.exec(
+        checklist_service.remove_statement(),
+        params=checklist_service.remove_params(
+            task_id=post.id, item=read, now=datetime.now(timezone.utc)
+        ),
+    )
+    assert [item["text"] for item in removed.one()[0]] == ["Concept"]
 
 
 async def test_promoting_a_missing_line_is_404(

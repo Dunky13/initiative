@@ -33,6 +33,7 @@ import { useCommunityPath } from "@/lib/communityUrl";
 import { formatDateTime } from "@/lib/formatDate";
 import { summarizeStored } from "@/lib/recurrence";
 import { truncateText } from "@/lib/text";
+import { entityRefRoute } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 import type { TranslateFn } from "@/types/i18n";
 
@@ -306,7 +307,9 @@ const ParentField = ({ value, item, variant, env }: FieldRendererProps) => {
   }
   return (
     <Link
-      to={env.taskHref({ ...item, id: parent.id })}
+      // By the task alone: a parent may be in another of the initiative's
+      // projects, which a project's own task links would name wrongly.
+      to={env.communityPath(entityRefRoute("task", parent.id), item)}
       draggable={false}
       title={env.t("tasks:subtasks.partOf", { title: parent.title })}
       className={cn(

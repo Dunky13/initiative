@@ -413,6 +413,8 @@ class ChecklistMessages:
     TOO_LONG = "CHECKLIST_TOO_LONG"
     #: The line names only people or things, which leaves no title for a task.
     ITEM_UNTITLED = "CHECKLIST_ITEM_UNTITLED"
+    #: The item changed between being read and being made a task.
+    ITEM_CHANGED = "CHECKLIST_ITEM_CHANGED"
 
 
 class TaskStatusMessages:

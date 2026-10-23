@@ -44,7 +44,7 @@ import { groupRowId, groupRows, NO_GROUP, uniqueTasksFromRows } from "@/lib/layo
 import { pluginFields, usePluginsOnItems } from "@/lib/layouts/plugins";
 import { taskFields } from "@/lib/layouts/tasks";
 import type { AppColumnDef, AppRow } from "@/lib/table";
-import { flattenTaskTree, nestTaskRows, type TaskTreeRow } from "@/lib/taskTree";
+import { flattenTaskTree, nestTaskRows, type TaskTreeRow, treeParents } from "@/lib/taskTree";
 import { cn } from "@/lib/utils";
 
 type ProjectTasksListViewProps = {
@@ -636,6 +636,20 @@ const ProjectTasksTableViewComponent = ({
   // Grouping and sorting each disable drag-to-reorder: a manual order can only
   // be expressed by the table's own row order.
   const dndEnabled = canReorderTasks && sorting.length === 0 && grouping.length === 0;
+  // A row moves among the rows listed under the same task, whose order is the
+  // list's; dropped beside a row of another level, it stays where it was.
+  const parents = useMemo(() => treeParents(rows), [rows]);
+  const handleReorder = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (over && parents.get(Number(active.id)) !== parents.get(Number(over.id))) {
+        onDragCancel();
+        return;
+      }
+      onDragEnd(event);
+    },
+    [parents, onDragEnd, onDragCancel]
+  );
   // Grouped, a row drags into another group instead, where the grouping can
   // change what puts it there and the reader may change the task.
   const moveEnabled = grouped?.move !== undefined && !statusDisabled;
@@ -686,7 +700,7 @@ const ProjectTasksTableViewComponent = ({
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={onDragStart}
-      onDragEnd={dndEnabled ? onDragEnd : handleGroupDrop}
+      onDragEnd={dndEnabled ? handleReorder : handleGroupDrop}
       onDragCancel={onDragCancel}
     >
       <SortableContext

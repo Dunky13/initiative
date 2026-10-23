@@ -1,6 +1,7 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
+import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildTask } from "@/__tests__/factories";
@@ -246,6 +247,39 @@ describe("TaskChecklist", () => {
     await waitFor(() => expect(promoted).toEqual(["two"]));
     await waitFor(() => expect(screen.queryByDisplayValue("Get it reviewed")).toBeNull());
     expect(screen.getByDisplayValue("Draft the copy")).toBeInTheDocument();
+  });
+
+  it("keeps what is typed into another line while one becomes a task", async () => {
+    const user = userEvent.setup();
+    stubWrites();
+    let answer: () => void = () => {};
+    server.use(
+      communityHttp.post(
+        "/tasks/:taskId/checklist/:itemId/promote",
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = () =>
+              resolve(HttpResponse.json(buildTask({ id: 99 }), { status: 201 }) as Response);
+          })
+      )
+    );
+    // The task as the server holds it, which a refetch hands the checklist.
+    let refetch: (next: ChecklistItem[]) => void = () => {};
+    const Held = () => {
+      const [held, setHeld] = useState(items);
+      refetch = setHeld;
+      return <TaskChecklist taskId={TASK_ID} items={held} canEdit />;
+    };
+    renderPage(() => <Held />, { queryClient: createTestQueryClient() });
+
+    const buttons = await screen.findAllByLabelText("Make this checklist item a task");
+    await user.click(buttons[1]);
+    await user.type(screen.getByDisplayValue("Draft the copy"), " today");
+    answer();
+    await waitFor(() => expect(screen.queryByDisplayValue("Get it reviewed")).toBeNull());
+    act(() => refetch([items[0]]));
+
+    expect(screen.getByDisplayValue("Draft the copy today")).toBeInTheDocument();
   });
 
   it("offers no task for a line the server does not hold yet", async () => {

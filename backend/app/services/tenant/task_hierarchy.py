@@ -19,14 +19,14 @@ import re
 from typing import Any, Iterable, Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import literal, null, union_all
+from sqlalchemy import literal, null, text, union_all
 from sqlalchemy.orm import aliased
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.identity_boundary import STORED_MENTION
 from app.core.messages import TaskMessages
-from app.core.relationships import RelationshipType
+from app.core.relationships import RelationshipType, node_id
 from app.core.search import SearchEntityType
 from app.models.tenant.relationship import EntityRelationship
 from app.models.tenant.task import Task
@@ -139,16 +139,36 @@ async def annotate(session: AsyncSession, tasks: list[Task]) -> None:
         )
 
 
+#: Every node a node's parts reach, at any depth. ``UNION`` rather than
+#: ``UNION ALL``, so a node already reached is not walked again and a loop the
+#: edges record ends the walk; no depth bound, so a long chain is walked whole.
+_PARTS_REACH = text(
+    """
+    WITH RECURSIVE reached(node) AS (
+        SELECT CAST(:start AS bigint)
+      UNION
+        SELECT r.source_node
+          FROM reached w
+          JOIN relationships r
+            ON r.target_node = w.node
+           AND r.relationship_type = :rtype
+           AND r.removed_at IS NULL
+    )
+    SELECT 1 FROM reached WHERE node = :other LIMIT 1
+    """
+)
+
+
 async def _descends_from(session: AsyncSession, task_id: int, other_id: int) -> bool:
     """Whether ``other_id`` is one of ``task_id``'s parts, at any depth."""
-    reached = await relationships_service.walk(
-        session,
-        relationships_service.Endpoint(SearchEntityType.task, task_id),
-        relationship_type=RelationshipType.part_of,
-        outbound=False,
+    found = await session.exec(
+        _PARTS_REACH.bindparams(
+            start=node_id(SearchEntityType.task, task_id),
+            other=node_id(SearchEntityType.task, other_id),
+            rtype=RelationshipType.part_of.value,
+        )
     )
-    other = relationships_service.Endpoint(SearchEntityType.task, other_id).node
-    return any(node == other for node, _, _ in reached)
+    return found.first() is not None
 
 
 async def set_parent(

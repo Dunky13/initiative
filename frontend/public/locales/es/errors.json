@@ -783,5 +783,6 @@
   "DEMO_LINK_EXPIRY_INVALID": "Un enlace de demostración no puede terminar en el pasado.",
   "INVALID_RECURRENCE_LIMIT": "Un máximo diario requiere una repetición por horas después de completar y una fecha de vencimiento. Introduce un máximo entero de 1 a 24, o déjalo en blanco.",
   "TASK_PARENT_IS_PART": "Una tarea no puede formar parte de sí misma ni de una de sus subtareas.",
-  "CHECKLIST_ITEM_UNTITLED": "Ese elemento solo nombra personas o enlaces, así que no deja un título para la tarea."
+  "CHECKLIST_ITEM_UNTITLED": "Ese elemento solo nombra personas o enlaces, así que no deja un título para la tarea.",
+  "CHECKLIST_ITEM_CHANGED": "Ese elemento cambió mientras se convertía en tarea. Revísalo e inténtalo de nuevo."
 }

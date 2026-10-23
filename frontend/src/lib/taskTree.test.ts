@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildTask } from "@/__tests__/factories";
 import type { TaskListRead } from "@/api/generated/initiativeAPI.schemas";
 import type { TaskGroupRow } from "@/lib/layouts/grouping";
-import { flattenTaskTree, nestTaskRows, type TaskTreeRow } from "@/lib/taskTree";
+import { flattenTaskTree, nestTaskRows, type TaskTreeRow, treeParents } from "@/lib/taskTree";
 
 const task = (id: number, parent?: number): TaskListRead =>
   buildTask({
@@ -46,5 +46,18 @@ describe("nestTaskRows", () => {
 
   it("lists the tasks of a loop of parents at the top, with what hangs off them", () => {
     expect(shape(nestTaskRows([task(1, 2), task(2, 1), task(3, 1)]))).toEqual(["1[3]", "2"]);
+  });
+});
+
+describe("treeParents", () => {
+  it("names the task each row is listed under, and none at the top", () => {
+    const parents = treeParents(nestTaskRows([task(1), task(2, 1), task(3), task(4, 2)]));
+
+    expect([...parents]).toEqual([
+      [1, null],
+      [2, 1],
+      [4, 2],
+      [3, null],
+    ]);
   });
 });

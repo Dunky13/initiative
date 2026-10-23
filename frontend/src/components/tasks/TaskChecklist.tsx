@@ -67,6 +67,12 @@ import { entityRefRoute } from "@/lib/tools";
 const fingerprint = (items: ChecklistItem[]) =>
   JSON.stringify(items.map((item) => [item.id, item.text, item.done]));
 
+/** A {@link fingerprint} with one item taken out. */
+const withoutItem = (stamp: string, id: string) =>
+  JSON.stringify(
+    (JSON.parse(stamp) as [string, string, boolean][]).filter(([held]) => held !== id)
+  );
+
 /** The list as it would be saved: a line still being written is not one yet. */
 const payloadOf = (items: ChecklistItem[]) =>
   items
@@ -235,9 +241,10 @@ export const TaskChecklist = ({ taskId, items: serverItems, canEdit }: TaskCheck
       { taskId, itemId: item.id },
       {
         onSuccess: (made) => {
-          const next = itemsRef.current.filter((entry) => entry.id !== item.id);
-          setItems(next);
-          sent.current = fingerprint(payloadOf(next));
+          setItems(itemsRef.current.filter((entry) => entry.id !== item.id));
+          // What the server holds lost the line and nothing else: another line
+          // still being written stays unsent, so the refetch keeps it.
+          sent.current = withoutItem(sent.current, item.id);
           toast.success(t("checklist.promoted"), {
             action: {
               label: t("checklist.openPromoted"),
