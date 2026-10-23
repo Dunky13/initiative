@@ -157,7 +157,20 @@
     "progress_one": "{{completed}}/{{total}} item",
     "progress_other": "{{completed}}/{{total}} items",
     "expandItem": "Show the whole item",
-    "collapseItem": "Show less"
+    "collapseItem": "Show less",
+    "promote": "Make it a task",
+    "promoteLabel": "Make this checklist item a task",
+    "promoted": "Made a task part of this one",
+    "openPromoted": "Open",
+    "promoteError": "Unable to make that item a task. Please try again."
+  },
+  "subtasks": {
+    "progressLabel": "Subtask progress",
+    "progress_one": "{{completed}}/{{total}} subtask",
+    "progress_other": "{{completed}}/{{total}} subtasks",
+    "partOf": "Part of {{title}}",
+    "fold": "Hide the subtasks of {{title}}",
+    "unfold": "Show the subtasks of {{title}}"
   },
   "prioritySelector": {
     "ariaLabel": "Priority: {{priority}}. Click to change.",

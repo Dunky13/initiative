@@ -165,6 +165,7 @@
       "priority": "Priorité",
       "task_status_id": "Statut",
       "task_type_id": "Type",
+      "parent_task_id": "Tâche parente",
       "assignee_ids": "Assignés",
       "created_by": "Créé par",
       "tag_ids": "Étiquettes",

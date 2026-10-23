@@ -9,12 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Subtasks in the table and on the board.** A table lists each task's subtasks under it, folded with it, and a card can show "2/7 subtasks" and the task it is part of. Group a table, board or Gantt by **Parent task** for a band per task holding its subtasks; drag a card into another band to move it there (#2936).
+- **Make a checklist item a task.** It leaves the checklist as a task in the same project, part of the one it came from, and done if it was ticked (#2936).
 - **A new subscription link from Settings.** A calendar subscription under **Settings › Security** offers **Get a new link**, which shows a fresh link to copy; the old one stops working (#2911).
 
 ### Fixed
 
 - **Saving a layout again.** **Edit layouts** saves changes to a table, Gantt or calendar layout that was saved before (#2911).
 - **Phones held sideways.** A project's table shows its tasks, and pages use the whole width of the screen.
+- **Task type icons in a project table.** They show as soon as the project opens and stay put while you change tasks, instead of blinking.
 - **The calendar's list in your language.** Weekday and month names in the list view follow your language.
 
 ## [0.77.0] - 2026-10-23

@@ -227,4 +227,44 @@ describe("TaskChecklist", () => {
     await waitFor(() => expect(listWrites).toHaveLength(1));
     expect((listWrites[0] as { text: string }[])[0].text).toBe(`${LONG} — and more`);
   });
+
+  it("makes a saved line a task and takes it off the list", async () => {
+    const user = userEvent.setup();
+    stubWrites();
+    const promoted: string[] = [];
+    server.use(
+      communityHttp.post("/tasks/:taskId/checklist/:itemId/promote", ({ params }) => {
+        promoted.push(String(params.itemId));
+        return HttpResponse.json(buildTask({ id: 99, title: "Get it reviewed" }), { status: 201 });
+      })
+    );
+    renderChecklist();
+
+    const buttons = await screen.findAllByLabelText("Make this checklist item a task");
+    await user.click(buttons[1]);
+
+    await waitFor(() => expect(promoted).toEqual(["two"]));
+    await waitFor(() => expect(screen.queryByDisplayValue("Get it reviewed")).toBeNull());
+    expect(screen.getByDisplayValue("Draft the copy")).toBeInTheDocument();
+  });
+
+  it("offers no task for a line the server does not hold yet", async () => {
+    const user = userEvent.setup();
+    stubWrites();
+    renderChecklist();
+
+    const first = await screen.findByDisplayValue("Draft the copy");
+    await user.type(first, " now");
+
+    const buttons = screen.getAllByLabelText("Make this checklist item a task");
+    expect(buttons[0]).toBeDisabled();
+    expect(buttons[1]).toBeEnabled();
+  });
+
+  it("offers nothing to a reader who cannot change the task", async () => {
+    renderChecklist(false);
+
+    await screen.findByDisplayValue("Draft the copy");
+    expect(screen.queryByLabelText("Make this checklist item a task")).toBeNull();
+  });
 });

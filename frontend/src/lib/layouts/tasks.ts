@@ -64,6 +64,10 @@ export const taskFields = (
     }),
     builtin({ id: "recurrence", kind: "recurrence", value: (task) => task.recurrence }),
     builtin({ id: "checklist", kind: "checklist", value: (task) => task.checklist_progress }),
+    // How far the tasks that are part of this one have got, and the task
+    // this one is part of.
+    builtin({ id: "subtasks", kind: "subtasks", value: (task) => task.subtask_progress }),
+    builtin({ id: "parent", kind: "parent", value: (task) => task.parent }),
     builtin({
       id: "priority",
       kind: "priority",
@@ -135,6 +139,8 @@ export const TASK_CARD: LayoutNode = {
       type: "stack",
       props: { align: "start" },
       children: [
+        // What the task is a piece of, above what it is called.
+        field("parent"),
         // The type's icon leads the name it qualifies.
         {
           type: "stack",
@@ -148,6 +154,7 @@ export const TASK_CARD: LayoutNode = {
           children: [field("assignees"), field("startDate"), field("dueDate"), field("recurrence")],
         },
         field("checklist"),
+        field("subtasks"),
       ],
     },
     {

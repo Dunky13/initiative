@@ -781,5 +781,7 @@
   "DEMO_PITCH_HELD": "Dieser Pitch enthält Inhalte, die geprüft werden, und kann noch nicht gelöscht werden.",
   "DEMO_PERSONA_TAKEN": "Dieser Handle gehört zu einem echten Konto.",
   "DEMO_LINK_EXPIRY_INVALID": "Ein Demo-Link kann nicht in der Vergangenheit enden.",
-  "INVALID_RECURRENCE_LIMIT": "Ein Tagesmaximum erfordert eine stündliche Wiederholung nach Abschluss und ein Fälligkeitsdatum. Gib ein ganzzahliges Maximum von 1 bis 24 ein oder lasse das Feld leer."
+  "INVALID_RECURRENCE_LIMIT": "Ein Tagesmaximum erfordert eine stündliche Wiederholung nach Abschluss und ein Fälligkeitsdatum. Gib ein ganzzahliges Maximum von 1 bis 24 ein oder lasse das Feld leer.",
+  "TASK_PARENT_IS_PART": "Eine Aufgabe kann nicht Teil von sich selbst oder einer ihrer Unteraufgaben sein.",
+  "CHECKLIST_ITEM_UNTITLED": "Dieser Punkt nennt nur Personen oder Links und ergibt daher keinen Aufgabentitel."
 }

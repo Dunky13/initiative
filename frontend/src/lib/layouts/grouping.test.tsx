@@ -40,6 +40,7 @@ const BUILT_INS = [
   "date_group",
   "priority",
   "task_status_id",
+  "parent_task_id",
   "assignee_ids",
   "created_by",
   "tag_ids",
@@ -210,6 +211,11 @@ describe("a drop into another group", () => {
         options: [{ property_id: sprint.id, add: ["s2"], remove: ["s1"] }],
       },
     });
+  });
+
+  it("puts a task dropped into a task's band under that task, and out of every band under none", () => {
+    expect(moveOf("parent_task_id")?.("4", "7")).toEqual({ patch: { parent_task_id: 7 } });
+    expect(moveOf("parent_task_id")?.("4", NO_GROUP)).toEqual({ patch: { parent_task_id: null } });
   });
 
   it("writes a status drop as the status, and nothing for a date window", () => {

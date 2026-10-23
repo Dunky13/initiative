@@ -133,6 +133,14 @@ Enter starts the next line. Paste a list and you get one item per line, which sa
 
 Good for the tasks that are secretly three tasks wearing a coat.
 
+### Subtasks
+
+When one of those steps turns out to need its own person, its own deadline and its own opinions, click the arrow on its line: **Make it a task**. The line leaves the checklist and comes back as a whole task in the same project, **Part of** the one it came from. A ticked line arrives done.
+
+A subtask is a task like any other. It has an assignee, dates, a status and comments, and it turns up in calendars and **My tasks**. Its parent counts how many of its subtasks are done ("2/7 subtasks"), so you can see how far a post has got without opening it.
+
+To put an existing task under another, link it as [**Part of**](mentions-and-links.md#connections) it, from the task's links or by dragging on the [Gantt](#gantt).
+
 ### Recurring tasks
 
 For the things that keep coming back: the weekly report, the monthly review, the bins.
@@ -201,6 +209,7 @@ A spreadsheet-style list. One row per task, with columns for status, priority, d
 - **Filter** down to exactly what you want.
 - **Select** several rows and edit them together.
 - **Assign to me** in the **Assignees** column takes a task without opening it. Missing the column? Add it in **Edit layouts**.
+- [Subtasks](#subtasks) sit under their parent, indented, and fold away with the arrow beside it.
 
 ![A project in Table view](../images/projects/view-table.png)
 
@@ -213,6 +222,7 @@ Cards in columns, one column per status. Drag a card along as the work moves.
 - **Drag and drop** between columns to change status.
 - **Collapse** a column you're deliberately not thinking about.
 - **Group** the board too, and each group becomes a band across the columns: one per person, say, or per priority.
+- Group by **Parent task** and every task with subtasks gets a band of its own, holding it and its subtasks across the columns. Drag a card into another band and it becomes part of that task instead.
 - A card's menu assigns you, unassigns you, or moves the task to another column.
 - A column with a **limit** counts its open tasks against it in its header ("4 / 5"). Once it's full, nobody can add a task to it or move one in until one leaves. What's already there stays.
 
@@ -286,7 +296,7 @@ Each of the project's four lists has a layout, and so does a task:
 | Layout | What it decides |
 |---|---|
 | **Table** | Which columns, in what order. |
-| **Board** | What a card holds: priority, dates, tags, the checklist bar, comment and blocker counts, any property. And each column's limit. |
+| **Board** | What a card holds: priority, dates, tags, the checklist and subtask bars, the task it's part of, comment and blocker counts, any property. And each column's limit. |
 | **Gantt** | Only its presets and groupings. Bars are bars. |
 | **Calendar** | Only its presets. A calendar is a calendar. |
 | **Task pages** | Where everything sits when a task is open, and in **Create task**. One per [task type](#task-types), each starting from a shape that suits it. |

@@ -13,10 +13,12 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronDown,
   ChevronUp,
   GripVertical,
+  ListTree,
   Loader2,
   Sparkles,
   SquareCheck,
@@ -50,9 +52,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAIEnabled } from "@/hooks/useAIEnabled";
-import { useGenerateChecklist, useToggleChecklistItem, useUpdateTask } from "@/hooks/useTasks";
+import {
+  useGenerateChecklist,
+  usePromoteChecklistItem,
+  useToggleChecklistItem,
+  useUpdateTask,
+} from "@/hooks/useTasks";
 import { newChecklistItemId } from "@/lib/checklist";
+import { useCommunityPath } from "@/lib/communityUrl";
 import { toast } from "@/lib/mascotToast";
+import { entityRefRoute } from "@/lib/tools";
 
 /** A checklist as the server holds it, in one comparable string. */
 const fingerprint = (items: ChecklistItem[]) =>
@@ -94,6 +103,14 @@ export const TaskChecklist = ({ taskId, items: serverItems, canEdit }: TaskCheck
 
   const updateTask = useUpdateTask(undefined, "tasks:checklist.updateError");
   const toggleItem = useToggleChecklistItem();
+  const promoteItem = usePromoteChecklistItem();
+  const navigate = useNavigate();
+  const gp = useCommunityPath();
+  // A line can become a task once the server holds it as it reads here.
+  const saved = useMemo(
+    () => new Map(serverItems.map((item) => [item.id, item.text])),
+    [serverItems]
+  );
 
   useEffect(() => {
     const local = itemsRef.current;
@@ -206,6 +223,27 @@ export const TaskChecklist = ({ taskId, items: serverItems, canEdit }: TaskCheck
         onSuccess: (updated) => {
           setItems(updated);
           sent.current = fingerprint(updated);
+        },
+      }
+    );
+  };
+
+  // The line becomes a task part of this one, and leaves the list here as it
+  // does on the server, so the refetch that follows has nothing left to send.
+  const handlePromote = (item: ChecklistItem) => {
+    promoteItem.mutate(
+      { taskId, itemId: item.id },
+      {
+        onSuccess: (made) => {
+          const next = itemsRef.current.filter((entry) => entry.id !== item.id);
+          setItems(next);
+          sent.current = fingerprint(payloadOf(next));
+          toast.success(t("checklist.promoted"), {
+            action: {
+              label: t("checklist.openPromoted"),
+              onClick: () => void navigate({ to: gp(entityRefRoute("task", made.id)) }),
+            },
+          });
         },
       }
     );
@@ -327,6 +365,11 @@ export const TaskChecklist = ({ taskId, items: serverItems, canEdit }: TaskCheck
                       onDelete={() =>
                         save(itemsRef.current.filter((entry) => entry.id !== item.id))
                       }
+                      onPromote={
+                        saved.get(item.id) === item.text.trim() && !promoteItem.isPending
+                          ? () => handlePromote(item)
+                          : undefined
+                      }
                     />
                   ))}
                 </ul>
@@ -408,6 +451,8 @@ type ChecklistItemRowProps = {
   onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   onToggle: (done: boolean) => void;
   onDelete: () => void;
+  /** Make the line a task of its own; left out while it cannot be one yet. */
+  onPromote?: () => void;
 };
 
 const ChecklistItemRow = ({
@@ -420,6 +465,7 @@ const ChecklistItemRow = ({
   onKeyDown,
   onToggle,
   onDelete,
+  onPromote,
 }: ChecklistItemRowProps) => {
   const { t } = useTranslation("tasks");
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -531,6 +577,18 @@ const ChecklistItemRow = ({
       </div>
       {canEdit ? (
         <div className="flex items-center gap-1 self-end sm:self-auto">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground"
+            aria-label={t("checklist.promoteLabel")}
+            title={t("checklist.promote")}
+            disabled={!onPromote}
+            onClick={onPromote}
+          >
+            <ListTree className="h-4 w-4" />
+          </Button>
           <Button
             type="button"
             variant="ghost"

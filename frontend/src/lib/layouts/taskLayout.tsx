@@ -771,6 +771,8 @@ export const blankTask = (
   project: null,
   checklist: [],
   checklist_progress: null,
+  parent: null,
+  subtask_progress: null,
   tags: [],
   properties: [],
   plugin_values: [],

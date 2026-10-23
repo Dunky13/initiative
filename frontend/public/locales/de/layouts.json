@@ -165,6 +165,7 @@
       "priority": "Priorität",
       "task_status_id": "Status",
       "task_type_id": "Typ",
+      "parent_task_id": "Übergeordnete Aufgabe",
       "assignee_ids": "Zuständige",
       "created_by": "Erstellt von",
       "tag_ids": "Tags",

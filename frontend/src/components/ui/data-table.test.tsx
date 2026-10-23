@@ -517,3 +517,116 @@ describe("DataTable grouping callback", () => {
     expect(seen).toEqual([reported]);
   });
 });
+
+interface TreeRow extends Row {
+  parts?: TreeRow[];
+}
+
+const treeColumns: AppColumnDef<TreeRow>[] = [
+  {
+    accessorKey: "name",
+    header: "Name",
+    cell: ({ row }) => (
+      <span>
+        {row.subRows.length > 0 ? (
+          <button
+            type="button"
+            aria-expanded={row.getIsExpanded()}
+            aria-label={`Fold ${row.original.name}`}
+            onClick={row.getToggleExpandedHandler()}
+          >
+            Fold
+          </button>
+        ) : null}
+        {row.original.name}
+      </span>
+    ),
+  },
+];
+
+const tree: TreeRow[] = [
+  {
+    id: 1,
+    name: "Post",
+    parts: [
+      { id: 2, name: "Script" },
+      { id: 3, name: "Shoot", parts: [{ id: 4, name: "Lights" }] },
+    ],
+  },
+  { id: 5, name: "Other" },
+];
+
+function TreeHarness() {
+  const [selected, setSelected] = useState<TreeRow[]>([]);
+  const [data, setData] = useState(tree);
+  return (
+    <div>
+      <div data-testid="selection">{selected.map((r) => r.id).join(",")}</div>
+      <button type="button" onClick={() => setData(structuredClone(tree))}>
+        Refetch
+      </button>
+      <DataTable
+        columns={treeColumns}
+        data={data}
+        enableRowSelection
+        enableFilterInput
+        getRowId={(row) => String(row.id)}
+        getSubRows={(row) => row.parts}
+        initialState={{ expanded: true }}
+        onRowSelectionChange={setSelected}
+      />
+    </div>
+  );
+}
+
+const names = () =>
+  screen
+    .getAllByRole("row")
+    .slice(1)
+    .map((row) => row.textContent?.replace(/^Fold/, ""));
+
+describe("DataTable nested rows", () => {
+  it("draws a row's nested rows under it, and folds them with it", async () => {
+    const user = userEvent.setup();
+    render(<TreeHarness />);
+
+    expect(names()).toEqual(["Post", "Script", "Shoot", "Lights", "Other"]);
+
+    await user.click(screen.getByRole("button", { name: "Fold Post" }));
+
+    expect(names()).toEqual(["Post", "Other"]);
+  });
+
+  it("keeps a folded row folded when its rows arrive again", async () => {
+    const user = userEvent.setup();
+    render(<TreeHarness />);
+
+    await user.click(screen.getByRole("button", { name: "Fold Post" }));
+    await user.click(screen.getByRole("button", { name: "Refetch" }));
+
+    expect(names()).toEqual(["Post", "Other"]);
+    expect(screen.getByRole("button", { name: "Fold Post" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+  });
+
+  it("selects only the row clicked, and reports a nested one", async () => {
+    const { user, getCheckboxes } = await selecting(<TreeHarness />);
+
+    await user.click(getCheckboxes()[0]);
+    expect(reported()).toBe("1");
+
+    await user.click(getCheckboxes()[3]);
+    expect(reported()).toBe("1,4");
+  });
+
+  it("keeps the rows above a nested row that matches the filter", async () => {
+    const user = userEvent.setup();
+    render(<TreeHarness />);
+
+    await user.type(screen.getByPlaceholderText("Filter..."), "Lights");
+
+    expect(names()).toEqual(["Post", "Shoot", "Lights"]);
+  });
+});
