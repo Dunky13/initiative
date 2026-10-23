@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A new subscription link from Settings.** A calendar subscription under **Settings › Security** offers **Get a new link**, which shows a fresh link to copy; the old one stops working (#2911).
+
+### Fixed
+
+- **Saving a layout again.** **Edit layouts** saves changes to a table, Gantt or calendar layout that was saved before (#2911).
+- **Phones held sideways.** A project's table shows its tasks, and pages use the whole width of the screen.
+- **The calendar's list in your language.** Weekday and month names in the list view follow your language.
+
 ## [0.77.0] - 2026-10-23
 
 ### Added

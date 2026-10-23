@@ -134,6 +134,8 @@
     "replaces": "You already have a link for this calendar. Getting a new one stops the old one working.",
     "getLink": "Get link",
     "getNewLink": "Get a new link",
+    "newLinkTitle": "A new link for {{name}}",
+    "newLinkDescription": "Your current link stops working. Subscribe again with the new link wherever you used the old one.",
     "copy": "Copy link",
     "copied": "Link copied.",
     "open": "Open in calendar app",

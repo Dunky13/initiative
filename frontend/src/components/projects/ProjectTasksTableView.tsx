@@ -635,7 +635,9 @@ const ProjectTasksTableViewComponent = ({
           columns={orderedColumns}
           data={rows}
           enableVirtualization
-          virtualContainerHeight="h-[calc(100vh-20rem)]"
+          // The screen below the page's header, but never so short that a
+          // landscape phone shows the column headings and no rows.
+          virtualContainerHeight="h-[max(calc(100dvh-20rem),20rem)]"
           virtualRowHeight={52}
           groupingOptions={groupingOptions}
           // The layout editor offers it above the preview.
