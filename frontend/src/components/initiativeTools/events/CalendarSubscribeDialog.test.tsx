@@ -11,8 +11,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { server } from "@/__tests__/helpers/msw-server";
 import { renderWithProviders } from "@/__tests__/helpers/render";
+import { type ApiKeyMetadata, Tool } from "@/api/generated/initiativeAPI.schemas";
 
-import { CalendarSubscribeDialog } from "./CalendarSubscribeDialog";
+import {
+  CalendarSubscribeDialog,
+  isSubscription,
+  NewSubscriptionLinkDialog,
+} from "./CalendarSubscribeDialog";
 
 vi.mock("@/lib/mascotToast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
@@ -20,14 +25,14 @@ vi.mock("@/lib/mascotToast", () => ({
 
 const CALENDAR = { id: 7, name: "Rehearsals" };
 
-const key = (overrides: Record<string, unknown> = {}) => ({
+const key = (overrides: Partial<ApiKeyMetadata> = {}): ApiKeyMetadata => ({
   id: 1,
   name: "Calendar: Rehearsals",
   token_prefix: "ppk_abcdefgh",
   is_active: true,
   read_only: true,
   community_id: 1,
-  resource_type: "calendar",
+  resource_type: Tool.calendar,
   resource_id: CALENDAR.id,
   created_at: "2026-01-01T00:00:00Z",
   last_used_at: null,
@@ -99,5 +104,41 @@ describe("CalendarSubscribeDialog", () => {
       await screen.findByText(/\/calendars\/8\/feed\.ics\?token=ppk_other$/)
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Get a new link" })).toBeInTheDocument();
+  });
+});
+
+describe("NewSubscriptionLinkDialog", () => {
+  it("replaces a subscription's key under its own name and shows the new link (#2911)", async () => {
+    let body: unknown;
+    server.use(
+      http.post("/api/v1/me/api-keys", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ api_key: key({ id: 2 }), secret: "ppk_fresh" }, { status: 201 });
+      })
+    );
+    const subscription = key();
+    if (!isSubscription(subscription)) throw new Error("a calendar's key is a subscription");
+    renderWithProviders(<NewSubscriptionLinkDialog apiKey={subscription} onClose={() => {}} />);
+
+    expect(screen.getByText(/current link stops working/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Get a new link" }));
+
+    expect(body).toMatchObject({
+      name: "Calendar: Rehearsals",
+      community_id: 1,
+      resource_type: "calendar",
+      resource_id: CALENDAR.id,
+    });
+    expect(
+      await screen.findByText(/\/api\/v1\/c\/1\/calendars\/7\/feed\.ics\?token=ppk_fresh$/)
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+
+  it("is offered only for a calendar's key", () => {
+    expect(isSubscription(key())).toBe(true);
+    expect(isSubscription(key({ resource_type: null, resource_id: null, read_only: false }))).toBe(
+      false
+    );
   });
 });

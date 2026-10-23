@@ -134,6 +134,8 @@
     "replaces": "Du hast bereits einen Link für diesen Kalender. Ein neuer Link setzt den alten außer Kraft.",
     "getLink": "Link erstellen",
     "getNewLink": "Neuen Link erstellen",
+    "newLinkTitle": "Neuer Link für {{name}}",
+    "newLinkDescription": "Dein bisheriger Link funktioniert dann nicht mehr. Abonniere den Kalender überall, wo du den alten Link genutzt hast, erneut mit dem neuen Link.",
     "copy": "Link kopieren",
     "copied": "Link kopiert.",
     "open": "In Kalender-App öffnen",

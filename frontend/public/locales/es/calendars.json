@@ -134,6 +134,8 @@
     "replaces": "Ya tienes un enlace para este calendario. Si pides uno nuevo, el anterior deja de funcionar.",
     "getLink": "Obtener enlace",
     "getNewLink": "Obtener un enlace nuevo",
+    "newLinkTitle": "Un enlace nuevo para {{name}}",
+    "newLinkDescription": "Tu enlace actual dejará de funcionar. Vuelve a suscribirte con el enlace nuevo dondequiera que usaras el anterior.",
     "copy": "Copiar enlace",
     "copied": "Enlace copiado.",
     "open": "Abrir en la aplicación de calendario",

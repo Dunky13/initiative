@@ -4,6 +4,11 @@ import { useTranslation } from "react-i18next";
 
 import { useReadSecondFactor } from "@/api/generated/auth/auth";
 import type { ApiKeyMetadata } from "@/api/generated/initiativeAPI.schemas";
+import {
+  isSubscription,
+  NewSubscriptionLinkDialog,
+  type SubscriptionKey,
+} from "@/components/initiativeTools/events/CalendarSubscribeDialog";
 import { HeldChangeNotice } from "@/components/settings/HeldChangeNotice";
 import { PasskeysSection } from "@/components/settings/PasskeysSection";
 import { PasswordSection } from "@/components/settings/PasswordSection";
@@ -216,9 +221,10 @@ const NewApiKeyDialog = ({
 };
 
 export const UserSettingsSecurityPage = () => {
-  const { t } = useTranslation(["settings", "common", "intake"]);
+  const { t } = useTranslation(["settings", "common", "intake", "calendars"]);
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ApiKeyMetadata | null>(null);
+  const [relinkTarget, setRelinkTarget] = useState<SubscriptionKey | null>(null);
   const [reporting, setReporting] = useState(false);
   const securityReporting = useSecurityReporting();
   const { user, refreshUser } = useAuth();
@@ -329,14 +335,26 @@ export const UserSettingsSecurityPage = () => {
                       <p className="text-muted-foreground text-sm">{detail}</p>
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setDeleteTarget(key)}
-                  >
-                    {t("security.deleteButton")}
-                  </Button>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                    {isSubscription(key) ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRelinkTarget(key)}
+                      >
+                        {t("calendars:subscribe.getNewLink")}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDeleteTarget(key)}
+                    >
+                      {t("security.deleteButton")}
+                    </Button>
+                  </div>
                 </li>
               );
             })}
@@ -345,6 +363,9 @@ export const UserSettingsSecurityPage = () => {
       </SettingsSection>
 
       <NewApiKeyDialog open={creating} onOpenChange={setCreating} />
+      {relinkTarget ? (
+        <NewSubscriptionLinkDialog apiKey={relinkTarget} onClose={() => setRelinkTarget(null)} />
+      ) : null}
 
       <ConfirmDialog
         open={deleteTarget !== null}
