@@ -7,7 +7,7 @@ import type { SearchSuggestion, UserSummary } from "@/api/generated/initiativeAP
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useInitiative } from "@/hooks/useInitiatives";
 import { useCommunityPickerSuggestions } from "@/hooks/useSearch";
-import { useInitiativeMemberSearch } from "@/hooks/useUsers";
+import { type MemberSearchScope, useMemberSearch } from "@/hooks/useUsers";
 import { getInitials } from "@/lib/initials";
 import type { ActiveMention } from "@/lib/mentions";
 import { MENTIONABLE_TYPES } from "@/lib/mentions";
@@ -21,7 +21,7 @@ const MENTION_LIMIT = 8;
 
 /** What choosing a row means: a person, or one of the things in this community. */
 export type MentionChoice =
-  | { user: true; id: number; label: string }
+  | { user: true; id: number; label: string; member: UserSummary }
   | { user: false; suggestion: SearchSuggestion }
   /** Nothing matched and `[[ ]]` offered to make it. */
   | { user: false; create: string };
@@ -33,6 +33,8 @@ interface MentionPopoverProps {
   /** The thing this comment is on, as a reference (`file:12`). Never
    *  offered: a remark about something does not point back at it. */
   subject?: string | null;
+  /** Who `@` offers: the initiative's members unless this says otherwise. */
+  members?: MemberSearchScope;
   /** Pixel anchor (relative to the field) so the popover sits under the word
    *  being typed. Falls back to below the whole field when absent. */
   anchor?: { top: number; left: number } | null;
@@ -65,7 +67,7 @@ const memberRow = (member: UserSummary): Row => {
         <AvatarFallback userId={member.id}>{getInitials(label)}</AvatarFallback>
       </Avatar>
     ),
-    choose: { user: true, id: member.id, label },
+    choose: { user: true, id: member.id, label, member },
   };
 };
 
@@ -99,6 +101,7 @@ export const MentionPopover = ({
   active,
   initiativeId,
   subject,
+  members: memberScope,
   anchor,
   onSelect,
   onClose,
@@ -113,10 +116,10 @@ export const MentionPopover = ({
   // A community-level surface — a community calendar, say — belongs to no
   // initiative, so there is nothing initiative-scoped to offer.
   const inInitiative = initiativeId > 0;
-  const members = useInitiativeMemberSearch(initiativeId, {
+  const members = useMemberSearch(memberScope ?? { type: "initiative", initiativeId }, {
     search: active.query,
     pageSize: MENTION_LIMIT,
-    enabled: active.user && inInitiative,
+    enabled: active.user && (memberScope !== undefined || inInitiative),
   });
   // `[[ ]]` reaches the tools this initiative has; `#` reaches everything.
   const { data: initiative } = useInitiative(inInitiative ? initiativeId : null);
@@ -153,7 +156,9 @@ export const MentionPopover = ({
     return [...found, createRow(active.query.trim(), t)];
   }, [active.user, active.canCreate, active.query, wanted, members.data, suggestions.items, t]);
 
-  const isLoading = inInitiative && (active.user ? members.isLoading : suggestions.isLoading);
+  const isLoading = active.user
+    ? (memberScope !== undefined || inInitiative) && members.isLoading
+    : inInitiative && suggestions.isLoading;
 
   useEffect(() => {
     setSelectedIndex(0);

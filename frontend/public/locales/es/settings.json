@@ -341,6 +341,12 @@
       "label": "Actualizar la aplicación automáticamente",
       "description": "Cuando tu servidor necesite una aplicación de escritorio más reciente, se descarga y se instala al reiniciar."
     },
+    "addingTitle": "Cuando añades una tarea",
+    "addingDescription": "Cómo se rellena una tarea nueva.",
+    "smartTaskTitles": {
+      "label": "Leer detalles del título",
+      "description": "Escribe «viernes a las 15:00», «cada semana», «!alta», «#etiqueta» o «@nombre» en el título de una tarea nueva para poner su fecha de vencimiento, repetición, prioridad, etiquetas y responsables. Lo que se lee aparece resaltado; quítalo para dejar las palabras tal cual."
+    },
     "completionTitle": "Cuando terminas una tarea",
     "completionDescription": "Lo que hace la app en cuanto marcas una tarea. Prueba cada opción antes de quedártela.",
     "appearanceTitle": "Apariencia",

@@ -58,6 +58,28 @@ A task can hold:
 
 ![Editing a task's details](../images/projects/task-details.png)
 
+### Typing the details into the title
+
+A new task's title fills in the rest as you type. "Email the caretaker about the hall keys friday at 3pm !high #fete @sam" becomes a task called "Email the caretaker about the hall keys", due Friday at three, high priority, tagged fete and given to Sam.
+
+| Write | And it sets |
+|---|---|
+| `today`, `tomorrow`, `friday`, `next friday`, `next week`, `in 3 days`, `oct 30` | The due date. On its own, a date is due by the end of that day. |
+| `at 3pm`, `9:30am`, `17:00`, `noon` | The time it's due. A time with no date is today's, or tomorrow's if today's has already gone. |
+| `every day`, `every other week`, `every 3 months`, `every mon, wed and fri`, `every weekday`, `every weekend` | A repeat, starting on the next day it falls on. |
+| `every third tuesday`, `the last friday of every month`, `every 1st and 15th`, `every last day of the month`, `every last weekday of the month`, `every oct 30` | A repeat by its place in the month or the year. |
+| `every! 6 weeks`, `ev! month`, `every 4 hours` | A repeat counted from when you finish each one, so the haircut is due six weeks after the last haircut, not six weeks after you first wrote it down. `ev` is short for `every`. Hourly repeats always count this way. |
+| `until dec 18`, `10 times`, after any of the above | When the repeat stops. |
+| `!urgent`, `!high`, `!medium`, `!low`, or `!1` (urgent) to `!4` (low) | The priority. |
+| `#name` | A tag the community already has. `#bug-fix` finds "Bug fix". |
+| `@name`, `@me` | Somebody who can open the project. Type `@` and a list of them opens, so you never have to remember how Sam spells their handle. |
+
+A repeat it can't set up properly isn't set at all, and its words stay in the title. Every third second of the month, for one.
+
+Whatever it reads is highlighted in the title and listed underneath, and the fields in the dialog show it too, so you see exactly what you're getting before **Create task**. Take a chip off the list and its words stay in the title as you typed them, for the day you really do need a task called "Plan next week". Delete the words and the field goes back to how it was.
+
+It reads the language you've set the app in, and works in the home page's quick add box too. Rather your titles stayed exactly as typed? Switch off **Read details from the title** in [Preferences](../account/profile-and-preferences.md#preferences).
+
 ### Statuses
 
 Every project starts with three:

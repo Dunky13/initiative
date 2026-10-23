@@ -739,6 +739,7 @@ class UserRead(UserBase):
     task_completion_visual_feedback: str = "none"
     task_completion_audio_feedback: bool = True
     task_completion_haptic_feedback: bool = True
+    smart_task_titles: bool = True
     locale: str = "en"
     # True when the account has a linked external identity (SSO). Consumed by
     # the profile/deletion UI to hide the password confirmation, since SSO-only
@@ -941,6 +942,7 @@ class UserSelfUpdate(SanitizedBaseModel):
     task_completion_visual_feedback: Optional[str] = None
     task_completion_audio_feedback: Optional[bool] = None
     task_completion_haptic_feedback: Optional[bool] = None
+    smart_task_titles: Optional[bool] = None
     locale: Optional[str] = Field(default=None, pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
 
     @field_validator("avatar_url")

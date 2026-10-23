@@ -79,6 +79,12 @@ export const AddItemDialog = <I extends Item, C, P, R extends { id: number }>({
         onInteractOutside={(event) => {
           if (changed.current) event.preventDefault();
         }}
+        // Escape in a field with a list open under it closes the list.
+        onEscapeKeyDown={(event) => {
+          if ((event.target as Element | null)?.closest?.("[data-picking]")) {
+            event.preventDefault();
+          }
+        }}
       >
         <Adding {...props} changed={changed} />
       </DialogContent>

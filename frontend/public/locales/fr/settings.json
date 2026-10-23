@@ -341,6 +341,12 @@
       "label": "Mettre à jour l'application automatiquement",
       "description": "Quand votre serveur a besoin d'une application de bureau plus récente, elle est téléchargée et installée au redémarrage."
     },
+    "addingTitle": "Quand vous ajoutez une tâche",
+    "addingDescription": "Comment une nouvelle tâche est remplie.",
+    "smartTaskTitles": {
+      "label": "Lire les détails dans le titre",
+      "description": "Écrivez « vendredi à 15h », « chaque semaine », « !haute », « #étiquette » ou « @nom » dans le titre d'une nouvelle tâche pour définir son échéance, sa répétition, sa priorité, ses étiquettes et ses responsables. Ce qui est lu est surligné ; retirez-le pour garder les mots tels quels."
+    },
     "completionTitle": "Quand vous terminez une tâche",
     "completionDescription": "Ce que fait l'app dès qu'une tâche est cochée. Essayez chacune avant de la garder.",
     "appearanceTitle": "Apparence",

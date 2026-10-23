@@ -894,6 +894,18 @@ export const rulePayload = (
 };
 
 /**
+ * The shift the server keeps beside `rule` picked here for a series starting
+ * at `start`, as `app.core.recurrence.shift_for` works it out: the browser's
+ * offset for a rule of hours, otherwise the whole days between the start's
+ * local date and its UTC one. What {@link fromStored} is given to read the rule
+ * back as it was picked.
+ */
+export const shiftFor = (rule: RecurrenceRule, start: Date): number => {
+  if (rule.frequency === "hourly") return -start.getTimezoneOffset();
+  return (localDayNumber(start) - utcDayNumber(start)) * 1440;
+};
+
+/**
  * A task or event update with the browser's zone beside it, so a stored
  * repeat moves with a start that moved, its days kept where they were picked.
  */

@@ -6,6 +6,7 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
+  useRef,
 } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -22,6 +23,7 @@ import { CommentSection } from "@/components/comments/CommentSection";
 import { MemberMultiSelect } from "@/components/members/MemberSearchSelect";
 import type { useScopePrompt } from "@/components/recurrence/OccurrenceScopeDialog";
 import { RecurrenceEditor } from "@/components/recurrence/RecurrenceEditor";
+import { PART_MARK, SmartTitleParts } from "@/components/tasks/SmartTitleParts";
 import { TaskChecklist } from "@/components/tasks/TaskChecklist";
 import { TaskPriorityOption } from "@/components/tasks/TaskPriorityOption";
 import { statusTriggerStyle, TaskStatusOption } from "@/components/tasks/TaskStatusOption";
@@ -38,11 +40,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useActiveCommunityId } from "@/hooks/useActiveCommunityId";
 import { useAIEnabled } from "@/hooks/useAIEnabled";
 import { useComments, useCommentsCache, useCommentThreadState } from "@/hooks/useComments";
 import { useDateLocale } from "@/hooks/useDateLocale";
-import { ItemDraftContext } from "@/hooks/useFieldSave";
+import { ItemDraftContext, type ItemEdit } from "@/hooks/useFieldSave";
 import { useRelativeTime } from "@/hooks/useRelativeTime";
+import { useSmartTitle, useSmartTitlesOn } from "@/hooks/useSmartTitle";
 import {
   TASK_SAVES,
   type TaskEdit,
@@ -60,6 +64,7 @@ import {
   type TaskRecurrenceValue,
 } from "@/lib/recurrence";
 import { referenceRef } from "@/lib/smartChips";
+import { type Applied, NOTHING_APPLIED, readingEdit } from "@/lib/smartTaskTitle";
 import { PRIORITY_ORDER } from "@/lib/sorting";
 import { dateTimePattern } from "@/lib/timeFormat";
 import { taskRoute } from "@/lib/tools";
@@ -103,8 +108,15 @@ const useTaskLayout = useItemContext<TaskLayoutContext>;
 
 type EditorProps = { item: TaskRead; label: string };
 
-/** The task's title, which is the detail's heading. */
-const TitleEditor = ({ item: task, label }: EditorProps) => {
+/** The task's title, which is the detail's heading. One being added is read
+ *  for its details where the reader has that on. */
+const TitleEditor = (props: EditorProps) => {
+  const adding = useContext(ItemDraftContext) !== null;
+  const smart = useSmartTitlesOn();
+  return adding && smart ? <SmartTitleEditor {...props} /> : <PlainTitleEditor {...props} />;
+};
+
+const PlainTitleEditor = ({ item: task, label }: EditorProps) => {
   const { t } = useTranslation("tasks");
   const { readOnly, askScope } = useTaskLayout();
   return (
@@ -115,6 +127,64 @@ const TitleEditor = ({ item: task, label }: EditorProps) => {
       save={useTaskFieldSave(task, label, askScope)}
       readOnly={readOnly}
       placeholder={t("taskForm.titlePlaceholder")}
+    />
+  );
+};
+
+/**
+ * The title of a task being added, read as it is typed: the due date, repeat,
+ * priority, tags and people it names are set on the task's own fields, marked
+ * in the title and listed under it, and the title is added without them.
+ */
+const SmartTitleEditor = ({ item: task, label }: EditorProps) => {
+  const { t } = useTranslation("tasks");
+  const { readOnly, askScope } = useTaskLayout();
+  const drafting = useContext(ItemDraftContext);
+  const save = useTaskFieldSave(task, label, askScope);
+  // The field shows the title as typed; the task is added as it reads.
+  const smart = useSmartTitle({
+    text: task.title,
+    communityId: useActiveCommunityId(),
+    projectId: task.project_id,
+    enabled: true,
+  });
+  const applied = useRef<Applied>({ ...NOTHING_APPLIED, title: task.title });
+  const latest = useRef(task);
+  latest.current = task;
+  // A reading that moved — the title typed on, a name looked up, a part kept —
+  // sets what it says on the task's fields.
+  useEffect(() => {
+    if (!smart.reading || !drafting) return;
+    const { edit, applied: next } = readingEdit(latest.current, smart.reading, applied.current);
+    applied.current = next;
+    if (edit) drafting.edit(edit as ItemEdit<unknown, unknown>);
+  }, [smart.reading, drafting]);
+  // Add can follow a change in the same event (Enter), before the reading
+  // above has run, so each change already sends the title as it reads.
+  const titleSave: typeof save = {
+    ...save,
+    save: (edit, undo) => {
+      if (!("patch" in edit) || typeof edit.patch.title !== "string") return save.save(edit, undo);
+      const title = smart.read(edit.patch.title).title;
+      applied.current = { ...applied.current, title };
+      return save.save({ patch: { ...edit.patch, title }, shows: edit.shows }, undo);
+    },
+  };
+  const parts = smart.reading?.parts ?? [];
+  return (
+    <TitleField
+      id="task-title"
+      label={label}
+      value={task.title}
+      save={titleSave}
+      readOnly={readOnly}
+      placeholder={t("taskForm.titlePlaceholder")}
+      marks={parts.map((part) => ({ ...part, className: PART_MARK[part.type] }))}
+      below={<SmartTitleParts reading={smart.reading} onKeep={smart.keep} className="px-3 pt-1" />}
+      mention={{
+        members: { type: "canOpen", tool: Tool.project, id: task.project_id },
+        onPick: smart.picked,
+      }}
     />
   );
 };

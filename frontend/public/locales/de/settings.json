@@ -341,6 +341,12 @@
       "label": "App automatisch aktualisieren",
       "description": "Wenn dein Server eine neuere Desktop-App braucht, wird sie heruntergeladen und beim Neustart installiert."
     },
+    "addingTitle": "Wenn du eine Aufgabe hinzufügst",
+    "addingDescription": "Wie eine neue Aufgabe ausgefüllt wird.",
+    "smartTaskTitles": {
+      "label": "Details aus dem Titel lesen",
+      "description": "Schreib „Freitag um 15 Uhr“, „jede Woche“, „!hoch“, „#tag“ oder „@name“ in den Titel einer neuen Aufgabe, um Fälligkeit, Wiederholung, Priorität, Tags und Zuständige zu setzen. Was gelesen wird, ist hervorgehoben; nimm es weg, um die Wörter so zu lassen."
+    },
     "completionTitle": "Wenn du eine Aufgabe abschließt",
     "completionDescription": "Was die App tut, sobald eine Aufgabe abgehakt ist. Probier jede Variante aus, bevor du sie behältst.",
     "appearanceTitle": "Darstellung",

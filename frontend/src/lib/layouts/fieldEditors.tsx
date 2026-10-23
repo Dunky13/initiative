@@ -22,7 +22,9 @@ import type {
   PropertySummary,
   TagSummary,
   Tool,
+  UserSummary,
 } from "@/api/generated/initiativeAPI.schemas";
+import { usePersonMention } from "@/components/comments/usePersonMention";
 import { MentionComposer } from "@/components/markdown/MentionComposer";
 import { AddPropertyButton } from "@/components/properties/AddPropertyButton";
 import { PropertyInput } from "@/components/properties/PropertyInput";
@@ -55,9 +57,11 @@ import {
 } from "@/hooks/useFieldSave";
 import { usePastedImages } from "@/hooks/usePastedImages";
 import { useProperties } from "@/hooks/useProperties";
+import type { MemberSearchScope } from "@/hooks/useUsers";
 import { getHttpStatus } from "@/lib/errorMessage";
 import { currentServerKey } from "@/lib/offlineSession";
 import { getItem, removeItem, setItem } from "@/lib/storage";
+import { cn } from "@/lib/utils";
 
 import { FieldFrame, ReadField, sameJson, useFieldDraft } from "./editing";
 
@@ -86,6 +90,48 @@ const useFittedHeight = (text: string) => {
 /** An item's title, which is its detail's heading, saved as `field` (a queue
  *  item's is its `label`). It cannot be emptied: leaving it blank puts the
  *  saved one back. A reader who cannot change it sees the heading alone. */
+/** How a title's text is set, which its marks are set the same way to line up
+ *  with it. */
+const TITLE_TEXT = "field-sizing-content py-1 font-semibold text-2xl tracking-tight sm:text-3xl";
+
+/**
+ * The title's text again, unseen, under the field, with its marked stretches
+ * coloured in: the field is clear, so they show through behind the words.
+ */
+const TitleMarks = ({
+  text,
+  marks,
+}: {
+  text: string;
+  marks: readonly { start: number; end: number; className: string }[];
+}) => {
+  const pieces: ReactNode[] = [];
+  let from = 0;
+  for (const mark of [...marks].sort((a, b) => a.start - b.start)) {
+    if (mark.start < from || mark.end > text.length) continue;
+    pieces.push(text.slice(from, mark.start));
+    pieces.push(
+      <mark key={mark.start} className={cn("rounded-sm text-transparent", mark.className)}>
+        {text.slice(mark.start, mark.end)}
+      </mark>
+    );
+    from = mark.end;
+  }
+  pieces.push(text.slice(from));
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        TITLE_TEXT,
+        // The field's own box: its border and padding, wrapped as it wraps.
+        "pointer-events-none absolute inset-0 w-full whitespace-pre-wrap break-words rounded-md border border-transparent px-3 text-transparent"
+      )}
+    >
+      {pieces}
+    </div>
+  );
+};
+
 export const TitleField = <I, P>({
   id,
   label,
@@ -96,6 +142,9 @@ export const TitleField = <I, P>({
   field = "title",
   optional = false,
   subscribe,
+  marks,
+  below,
+  mention,
 }: {
   id: string;
   label: string;
@@ -109,6 +158,12 @@ export const TitleField = <I, P>({
   optional?: boolean;
   /** The item, for a subscribe toggle beside its title. */
   subscribe?: { kind: ContentKind; id: number };
+  /** Stretches of the title drawn marked, each with its own class. */
+  marks?: readonly { start: number; end: number; className: string }[];
+  /** Drawn under the title, inside its frame. */
+  below?: ReactNode;
+  /** `@` offers these people, and writes the picked one's handle. */
+  mention?: { members: MemberSearchScope; onPick?: (member: UserSummary) => void };
 }) => {
   // One being added may be emptied while it is typed: Add waits for a title.
   const adding = useContext(ItemDraftContext) !== null;
@@ -128,6 +183,14 @@ export const TitleField = <I, P>({
       : save.save({ patch: { [field]: title } as P, shows: { [field]: title } as Partial<I> });
   });
   const box = useFittedHeight(draft.value);
+  const people = usePersonMention({
+    field: box,
+    text: draft.value,
+    onChange: draft.change,
+    members: mention?.members ?? { type: "community" },
+    enabled: mention !== undefined && !readOnly,
+    onPick: mention?.onPick,
+  });
   if (readOnly) {
     return besides(
       <h1 className="min-w-0 grow basis-72 break-words font-semibold text-2xl tracking-tight sm:text-3xl">
@@ -148,17 +211,32 @@ export const TitleField = <I, P>({
       className="grow basis-72"
     >
       <h1 className="sr-only">{value}</h1>
-      {/* One line of text that wraps, so a long title shows whole on a phone. */}
-      <Textarea
-        ref={box}
-        id={id}
-        rows={1}
-        aria-multiline="false"
-        value={draft.value}
-        onChange={(event) => draft.change(event.target.value.replace(/\s*[\r\n]+\s*/g, " "))}
-        placeholder={placeholder}
-        className="field-sizing-content min-h-0 resize-none py-1 font-semibold text-2xl tracking-tight shadow-none focus-visible:ring-0 sm:text-3xl"
-      />
+      <div className="relative">
+        {marks?.length ? <TitleMarks text={draft.value} marks={marks} /> : null}
+        {/* One line of text that wraps, so a long title shows whole on a phone. */}
+        <Textarea
+          ref={box}
+          id={id}
+          rows={1}
+          aria-multiline="false"
+          value={draft.value}
+          onChange={(event) => {
+            const text = event.target.value.replace(/\s*[\r\n]+\s*/g, " ");
+            draft.change(text);
+            people.sync(event.target, text);
+          }}
+          {...people.handlers}
+          // A list open under the field takes Escape for itself.
+          data-picking={people.open || undefined}
+          placeholder={placeholder}
+          className={cn(
+            TITLE_TEXT,
+            "relative min-h-0 resize-none shadow-none focus-visible:ring-0"
+          )}
+        />
+        {people.popover}
+      </div>
+      {below}
     </FieldFrame>
   );
 };
