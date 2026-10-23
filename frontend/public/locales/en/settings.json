@@ -341,6 +341,12 @@
       "label": "Update the app automatically",
       "description": "When your server needs a newer desktop app, download it and install it on restart."
     },
+    "addingTitle": "When you add a task",
+    "addingDescription": "How a task you are adding is filled in.",
+    "smartTaskTitles": {
+      "label": "Read details from the title",
+      "description": "Write “friday at 3pm”, “every week”, “!high”, “#tag” or “@name” in a new task's title to set its due date, repeat, priority, tags and assignees. What is read is highlighted; take it off to keep the words as they are."
+    },
     "completionTitle": "When you finish a task",
     "completionDescription": "What the app does the moment a task is checked off. Try each one before you keep it.",
     "appearanceTitle": "Appearance",

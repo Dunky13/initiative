@@ -199,6 +199,7 @@ export function buildUser(overrides: Partial<UserRead> = {}): UserRead {
     task_completion_visual_feedback: "none",
     task_completion_audio_feedback: false,
     task_completion_haptic_feedback: false,
+    smart_task_titles: true,
     locale: "en",
     ...overrides,
   };

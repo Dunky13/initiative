@@ -224,5 +224,50 @@
     "sections": {
       "schedule": "Programación"
     }
+  },
+  "smartTitle": {
+    "read": "Leído del título",
+    "due": "Vence {{when}}",
+    "priority": "Prioridad {{priority}}",
+    "keep": "Dejar «{{text}}» en el título",
+    "words": {
+      "today": "hoy",
+      "tomorrow": "mañana",
+      "next": "próximo|próxima|siguiente",
+      "nextAfter": "que viene|próximo|próxima",
+      "in": "en|dentro de",
+      "every": "cada|todos los|todas las",
+      "other": "",
+      "lead": "para|el|para el|antes del|hasta el",
+      "at": "a las|a la",
+      "one": "un|una",
+      "of": "de",
+      "ordinal": "",
+      "day": "día|días",
+      "week": "semana|semanas",
+      "month": "mes|meses",
+      "year": "año|años",
+      "weekday": "día laborable|días laborables|laborable|laborables",
+      "noon": "mediodía",
+      "midnight": "medianoche",
+      "am": "am|a.m.",
+      "pm": "pm|p.m.",
+      "oclock": "h",
+      "me": "yo|mí|me",
+      "weekend": "fin de semana|fines de semana",
+      "hour": "hora|horas",
+      "first": "primer|primero|primera",
+      "second": "segundo|segunda",
+      "third": "tercer|tercero|tercera",
+      "fourth": "cuarto|cuarta",
+      "fifth": "quinto|quinta",
+      "last": "último|última|últimos|últimas",
+      "ofTheMonth": "del mes|de cada mes|de todos los meses|al mes",
+      "ofEveryMonth": "de cada mes|de todos los meses|cada mes|mensual",
+      "and": "y|&",
+      "the": "el|la|los|las",
+      "until": "hasta|hasta el",
+      "times": "veces"
+    }
   }
 }

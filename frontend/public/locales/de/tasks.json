@@ -224,5 +224,50 @@
     "sections": {
       "schedule": "Zeitplan"
     }
+  },
+  "smartTitle": {
+    "read": "Aus dem Titel gelesen",
+    "due": "Fällig {{when}}",
+    "priority": "Priorität: {{priority}}",
+    "keep": "„{{text}}“ im Titel lassen",
+    "words": {
+      "today": "heute",
+      "tomorrow": "morgen",
+      "next": "nächste|nächsten|nächster|nächstes|kommende|kommenden",
+      "nextAfter": "",
+      "in": "in",
+      "every": "jeden|jede|jedes|alle",
+      "other": "zweite|zweiten",
+      "lead": "bis|am|zum|fällig|fällig am",
+      "at": "um",
+      "one": "ein|eine|einem|einer|einen",
+      "of": "",
+      "ordinal": "",
+      "day": "tag|tage|tagen",
+      "week": "woche|wochen",
+      "month": "monat|monate|monaten",
+      "year": "jahr|jahre|jahren",
+      "weekday": "werktag|werktage|wochentag|wochentage",
+      "noon": "mittag",
+      "midnight": "mitternacht",
+      "am": "",
+      "pm": "",
+      "oclock": "uhr|h",
+      "me": "ich|mich|me",
+      "weekend": "wochenende|wochenenden",
+      "hour": "stunde|stunden",
+      "first": "ersten|erster|erste|erstes",
+      "second": "zweiten|zweiter|zweite|zweites",
+      "third": "dritten|dritter|dritte|drittes",
+      "fourth": "vierten|vierter|vierte|viertes",
+      "fifth": "fünften|fünfter|fünfte|fünftes",
+      "last": "letzten|letzter|letzte|letztes",
+      "ofTheMonth": "im monat|des monats|jedes monats|jeden monat",
+      "ofEveryMonth": "jedes monats|jeden monat|monatlich",
+      "and": "und|&",
+      "the": "der|die|das|den|dem",
+      "until": "bis|bis zum",
+      "times": "mal"
+    }
   }
 }

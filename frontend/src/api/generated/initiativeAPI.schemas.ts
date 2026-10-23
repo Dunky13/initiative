@@ -7984,6 +7984,7 @@ export interface OperatorUserRead {
   task_completion_visual_feedback: string;
   task_completion_audio_feedback: boolean;
   task_completion_haptic_feedback: boolean;
+  smart_task_titles: boolean;
   locale: string;
   has_federated_identity: boolean;
   has_password: boolean;
@@ -11070,6 +11071,7 @@ export interface UserRead {
   task_completion_visual_feedback: string;
   task_completion_audio_feedback: boolean;
   task_completion_haptic_feedback: boolean;
+  smart_task_titles: boolean;
   locale: string;
   has_federated_identity: boolean;
   has_password: boolean;
@@ -11105,6 +11107,7 @@ export interface UserSelfUpdate {
   task_completion_visual_feedback?: string | null;
   task_completion_audio_feedback?: boolean | null;
   task_completion_haptic_feedback?: boolean | null;
+  smart_task_titles?: boolean | null;
   locale?: string | null;
 }
 

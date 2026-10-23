@@ -210,6 +210,7 @@ const prefsOf = (user: UserRead) => ({
   ),
   task_completion_audio_feedback: user.task_completion_audio_feedback ?? true,
   task_completion_haptic_feedback: user.task_completion_haptic_feedback ?? true,
+  smart_task_titles: user.smart_task_titles ?? true,
 });
 type InterfacePrefs = ReturnType<typeof prefsOf>;
 
@@ -431,6 +432,23 @@ export const UserSettingsInterfacePage = ({ user, acceptUser }: UserSettingsInte
               ))}
             </SelectContent>
           </Select>
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection
+        title={t("interface.addingTitle")}
+        description={t("interface.addingDescription")}
+      >
+        <SettingsRow
+          label={t("interface.smartTaskTitles.label")}
+          description={t("interface.smartTaskTitles.description")}
+        >
+          <Switch
+            checked={prefs.smart_task_titles}
+            onCheckedChange={(next) => savePrefs({ smart_task_titles: next })}
+            disabled={pending}
+            aria-label={t("interface.smartTaskTitles.label")}
+          />
         </SettingsRow>
       </SettingsSection>
 

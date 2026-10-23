@@ -224,5 +224,50 @@
     "sections": {
       "schedule": "Schedule"
     }
+  },
+  "smartTitle": {
+    "read": "Read from the title",
+    "due": "Due {{when}}",
+    "priority": "{{priority}} priority",
+    "keep": "Keep “{{text}}” in the title",
+    "words": {
+      "today": "today",
+      "tomorrow": "tomorrow|tmrw|tmr",
+      "next": "next",
+      "nextAfter": "",
+      "in": "in",
+      "every": "every|each",
+      "other": "other",
+      "lead": "due|by|on|due on|due by",
+      "at": "at",
+      "one": "a|an|one",
+      "of": "of",
+      "ordinal": "st|nd|rd|th",
+      "day": "day|days",
+      "week": "week|weeks|wk|wks",
+      "month": "month|months",
+      "year": "year|years|yr|yrs",
+      "weekday": "weekday|weekdays|workday|workdays",
+      "noon": "noon|midday",
+      "midnight": "midnight",
+      "am": "am|a.m.",
+      "pm": "pm|p.m.",
+      "oclock": "o'clock|oclock",
+      "me": "me",
+      "weekend": "weekend|weekends",
+      "hour": "hour|hours|hr|hrs",
+      "first": "first",
+      "second": "second",
+      "third": "third",
+      "fourth": "fourth",
+      "fifth": "fifth",
+      "last": "last|final",
+      "ofTheMonth": "of the month|in the month|of each month|of every month|each month|every month|a month",
+      "ofEveryMonth": "of every month|of each month|each month|every month|monthly",
+      "and": "and|&",
+      "the": "the",
+      "until": "until|till|through",
+      "times": "times"
+    }
   }
 }

@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   ![A project's Gantt view: tasks as bars across six weeks, a milestone at the end, and arrows from each task to what it waits on](docs/images/releases/gantt.webp)
 
+- **Type a task's details into its title.** "Send the invoice every third tuesday at 3pm !high #billing @sam" sets the repeat, time, priority, tag and assignee, and `@` opens a member search. Switch it off with **Read details from the title** in **Preferences**.
+
+  ![Create task with "Restock the healing potions every third tuesday at 3pm !high #quest" and a person in its title, each part highlighted and listed underneath, and the priority, assignee and due date filled in](docs/images/releases/title-details.webp)
+
 - **Group by any field.** Group a table, board or Gantt by any field whose values repeat, from assignees and tags to a property or a date by week or month. Choose what each view offers in **Edit layouts**.
 
   ![A project's Gantt grouped by assignee, each person's tasks under their name and unassigned work at the end](docs/images/releases/group-by-assignees.webp)
@@ -51,18 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Calendar times and dates.** All-day and timed events keep their days and hours across clock changes, long events show across the whole month or year, and invalid or nonexistent local times show an error.
 - **Repeating tasks and calendar feeds.** Extra and skipped dates keep a task's cadence and remaining count, yearly month-end repeats keep every month, and calendar imports and exports keep durations and time zones.
-- **Dashboard Gantt progress counts finished work.** Give the tile a column saying whether work is **Done** to fill each bar as its work finishes; without one, bars stay unfilled instead of counting anything past its end as done.
+- **Dashboard Gantt progress counts finished work.** Give the tile a column saying whether work is **Done** to fill each bar as its work finishes; without one, bars stay unfilled.
 - **Statistics and dashboard dates.** Completion statistics use when a task was completed, and SQL calendar dates keep their day in every time zone. Calendar and notice API inputs that are instants need an explicit time zone offset.
 - **Email-code sign-in works in the apps.** On servers that ask for a captcha, the phone and desktop apps show it and send the code, with no change to the captcha provider's settings.
 - **Bitwarden passkeys work in the Android app.** **Server operators:** Bitwarden checks your server through Google, so this needs a server Google can reach.
-- **Export selected and Focus work again.** Export selected no longer fails with "Invalid filter conditions", and Focus shows your pinned tasks.
-- **AI works with current Claude models.** Suggestions and summaries from a model that thinks before it answers no longer fail with a provider error.
+- **Export selected and Focus work again.** Export selected works with any filter, and Focus shows your pinned tasks.
+- **AI works with current Claude models.** Suggestions and summaries work with models that think before they answer.
 - **Running as a non-root user.** The container starts under Docker's `user:` or Kubernetes' `runAsUser` and runs as that user, without `PUID`/`PGID`, so the uploads folder must already be writable by it. The first log line says how it started.
 - **"Starts grouped by" reaches everyone.** A project list opens grouped the way its layout says for anyone who hasn't picked a grouping of their own.
 - **Calendar subscriptions.** A subscribed calendar is named after the calendar and its initiative, in your own time zone. To rename one you already subscribed to, subscribe to its link again.
 - **Updating the app.** The phone and desktop apps show one prompt for a new version, and **Reload** always installs it.
 - **Home on a phone.** Customizing keeps the view tabs and widget buttons clear of each other and of widget titles, long names wrap, and the calendar widget is no longer a card inside a card.
-- **A long title shows whole on a phone.** The title of a task, event, counter or picture wraps onto more lines instead of being cut off at the edge of the screen, with its buttons on a row above it.
+- **A long title shows whole on a phone.** The title of a task, event, counter or picture wraps onto more lines, with its buttons on a row above it.
 - **Spacing on a layout you changed.** Board cards and pages you changed in **Edit layouts** keep their spacing.
 
 ### Security
