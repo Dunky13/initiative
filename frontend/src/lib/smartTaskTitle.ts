@@ -102,14 +102,20 @@ export const readingEdit = (
         recurrence: toRRule(reading.repeat),
         recurrence_strategy: reading.repeatStrategy,
         recurrence_limit: null,
-        // Shown as the server will keep it, so the repeat editor reads it as picked.
-        recurrence_shift: reading.due ? shiftFor(reading.repeat, reading.due) : 0,
       });
     } else {
       patch.recurrence = null;
       shows.recurrence = null;
     }
     next.repeat = repeat;
+  }
+  // The title's repeat is shown with the shift the server will keep for the
+  // due date the task ends up with: the title's, or one picked by hand, which
+  // stays. Worked out again whenever either moves, so the repeat editor reads
+  // the rule as picked.
+  if (reading.repeat && (repeat !== applied.repeat || "due_date" in patch)) {
+    const kept = "due_date" in patch ? patch.due_date : task.due_date;
+    shows.recurrence_shift = kept ? shiftFor(reading.repeat, new Date(kept)) : 0;
   }
 
   const tags = reading.tags.map((tag) => tag.id);

@@ -154,6 +154,34 @@ describe("readingEdit — repeats that need more than a rule", () => {
     expect(edit?.shows.recurrence_shift).toBe(shiftFor(rule, DUE));
   });
 
+  it("shows the repeat with the shift of the due date the task keeps", () => {
+    const rule = { ...createRecurrenceFromPreset("weekly", DUE.toISOString()) } as RecurrenceRule;
+    const first = readingEdit(blank(), reading({ due: DUE }), NOTHING_APPLIED);
+    // A due date picked by hand since, early in the UTC day: its local date
+    // is another day wherever the zone is not UTC.
+    const picked = "2026-12-01T00:30:00.000Z";
+    const { edit } = readingEdit(
+      blank({ due_date: picked }),
+      reading({ due: DUE, repeat: rule }),
+      first.applied
+    );
+    expect(edit?.patch).not.toHaveProperty("due_date");
+    expect(edit?.shows.recurrence_shift).toBe(shiftFor(rule, new Date(picked)));
+  });
+
+  it("works the shift out again when the title's date moves under its repeat", () => {
+    const rule = createRecurrenceFromPreset("daily") as RecurrenceRule;
+    const first = readingEdit(blank(), reading({ due: DUE, repeat: rule }), NOTHING_APPLIED);
+    const later = new Date(2026, 11, 1, 0, 30);
+    const { edit } = readingEdit(
+      blank({ due_date: DUE.toISOString(), recurrence: "RRULE:FREQ=DAILY" }),
+      reading({ due: later, repeat: rule }),
+      first.applied
+    );
+    expect(edit?.patch.due_date).toBe(later.toISOString());
+    expect(edit?.shows.recurrence_shift).toBe(shiftFor(rule, later));
+  });
+
   it("sends a changed strategy even when the rule reads the same", () => {
     const rule = createRecurrenceFromPreset("daily") as RecurrenceRule;
     const first = readingEdit(blank(), reading({ due: DUE, repeat: rule }), NOTHING_APPLIED);
