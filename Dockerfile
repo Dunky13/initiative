@@ -3,7 +3,7 @@ WORKDIR /frontend
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN apk add --no-cache zip
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
+RUN npm install --global corepack@0.36.0 && corepack enable && pnpm install --frozen-lockfile
 
 FROM frontend-deps AS frontend-build
 COPY frontend .
