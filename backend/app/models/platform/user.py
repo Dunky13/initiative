@@ -403,6 +403,13 @@ class User(SQLModel, table=True):
         default=True,
         sa_column=Column(Boolean, nullable=False, server_default="true"),
     )
+    #: Whether a task being added reads its due date, priority, repeat, tags
+    #: and assignees out of the words typed into its title. On until the
+    #: account turns it off; what it reads is shown before the task is added.
+    smart_task_titles: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, server_default="true"),
+    )
 
     # An account has no standing view of guild content. What refers to a person
     # from inside a guild schema — an assignment, a membership, an ordering, a

@@ -932,6 +932,31 @@ async def test_task_completion_audio_and_haptic_round_trip(client, acting_user):
         assert result["task_completion_haptic_feedback"] is value
 
 
+async def test_smart_task_titles_round_trip(client, acting_user):
+    """Reading a new task's title is on until the account turns it off."""
+    a = await acting_user()
+
+    me = await client.get("/api/v1/me", headers=a.headers)
+    assert me.status_code == 200
+    assert me.json()["smart_task_titles"] is True
+
+    for value in (False, True):
+        response = await client.patch(
+            "/api/v1/me", headers=a.headers, json={"smart_task_titles": value}
+        )
+        assert response.status_code == 200, value
+        assert response.json()["smart_task_titles"] is value
+
+    # Left out of a write, it stays as it was.
+    await client.patch(
+        "/api/v1/me", headers=a.headers, json={"smart_task_titles": False}
+    )
+    response = await client.patch(
+        "/api/v1/me", headers=a.headers, json={"locale": "en"}
+    )
+    assert response.json()["smart_task_titles"] is False
+
+
 def _parse_csv(body: bytes) -> tuple[list[str], list[list[str]]]:
     """Strip the UTF-8 BOM and parse the CSV body into (headers, rows)."""
     import csv
