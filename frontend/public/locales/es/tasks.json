@@ -157,7 +157,20 @@
     "progress_one": "{{completed}}/{{total}} elemento",
     "progress_other": "{{completed}}/{{total}} elementos",
     "expandItem": "Mostrar el elemento completo",
-    "collapseItem": "Mostrar menos"
+    "collapseItem": "Mostrar menos",
+    "promote": "Convertir en tarea",
+    "promoteLabel": "Convertir este elemento de la lista en una tarea",
+    "promoted": "Se creó una tarea que forma parte de esta",
+    "openPromoted": "Abrir",
+    "promoteError": "No se pudo convertir el elemento en una tarea. Inténtalo de nuevo."
+  },
+  "subtasks": {
+    "progressLabel": "Progreso de las subtareas",
+    "progress_one": "{{completed}}/{{total}} subtarea",
+    "progress_other": "{{completed}}/{{total}} subtareas",
+    "partOf": "Parte de {{title}}",
+    "fold": "Ocultar las subtareas de {{title}}",
+    "unfold": "Mostrar las subtareas de {{title}}"
   },
   "prioritySelector": {
     "ariaLabel": "Prioridad: {{priority}}. Haz clic para cambiar.",

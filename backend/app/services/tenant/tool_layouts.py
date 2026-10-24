@@ -341,7 +341,13 @@ def check(target: Target, write: ToolLayoutWrite) -> dict[str, Any]:
     """A layout's definition as stored, or a 400 naming what is wrong with it.
     What it leaves out is left out, so it is drawn as shipped."""
     definition = write.definition
-    stored = definition.model_dump(mode="json", exclude_unset=True)
+    # A null is what a read sends for what a layout leaves out, so a layout
+    # read and sent back leaves it out too.
+    stored = {
+        key: value
+        for key, value in definition.model_dump(mode="json", exclude_unset=True).items()
+        if value is not None
+    }
     if isinstance(write, DetailLayoutWrite):
         _require(write.kind, DETAIL_LAYOUTS.get(target.tool, ()))
         if _typed(target, write.kind) != (write.task_type_id is not None):

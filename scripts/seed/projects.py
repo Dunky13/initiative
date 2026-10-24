@@ -193,6 +193,37 @@ PROJECTS: dict[str, list[dict]] = {
                     ],
                     "tags": ["quest", "combat", "exploration"],
                 },
+                # The Death House's rooms, as tasks of their own under it.
+                {
+                    "title": "Search the library for the secret door",
+                    "priority": TaskPriority.medium,
+                    "category": TaskStatusCategory.done,
+                    "assignees": ["Vex Shadowstep"],
+                    "start_days": -6,
+                    "due_days": -4,
+                    "part_of": "Survive the Death House",
+                    "tags": ["exploration"],
+                },
+                {
+                    "title": "Lay the ghosts of Rose and Thorn to rest",
+                    "priority": TaskPriority.high,
+                    "category": TaskStatusCategory.in_progress,
+                    "assignees": ["Elara Moonwhisper"],
+                    "start_days": -3,
+                    "due_days": 0,
+                    "part_of": "Survive the Death House",
+                    "tags": ["roleplay"],
+                },
+                {
+                    "title": "Destroy the shambling mound",
+                    "priority": TaskPriority.high,
+                    "category": TaskStatusCategory.todo,
+                    "assignees": ["Thorn Ironforge"],
+                    "start_days": 0,
+                    "due_days": 2,
+                    "part_of": "Survive the Death House",
+                    "tags": ["combat"],
+                },
                 {
                     "title": "Find the Sunsword in the Amber Temple",
                     "description": "The legendary weapon is key to defeating the Dark Lord.",
@@ -1559,8 +1590,21 @@ async def create_project(c: Community, d: dict) -> Project:
         # A task names its type ("Bug"), or is a Task.
         task_type = types.get(td.get("type", "Task"), types["Task"])
         await _create_task(c, project, status, task_type, position, td)
-    # Once every task exists, so a task may wait on one listed after it.
+    # Once every task exists, so a task may wait on, or be part of, one listed
+    # after it.
     for td in d.get("tasks", ()):
+        if td.get("part_of"):
+            await relationships_service.create(
+                c.session,
+                source=relationships_service.Endpoint(
+                    SearchEntityType.task, c.tasks[td["title"]].id
+                ),
+                relationship_type=RelationshipType.part_of,
+                target=relationships_service.Endpoint(
+                    SearchEntityType.task, c.tasks[td["part_of"]].id
+                ),
+                created_by=c.users[d["owner"]].id,
+            )
         for title in td.get("waits_on", ()):
             await relationships_service.create(
                 c.session,

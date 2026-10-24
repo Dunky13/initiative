@@ -3,7 +3,8 @@ import { expect, type Page } from "@playwright/test";
 /**
  * Barovia Arc, the seed's horror campaign (scripts/seed/projects.py): dated
  * tasks a few weeks either side of today, a Milestone and an Idea among them,
- * and tasks that wait on others. Reached from its bookmark, as admin1 has it.
+ * tasks that wait on others, and three that are part of the Death House.
+ * Reached from its bookmark, as admin1 has it.
  */
 export async function openBarovia(page: Page) {
   await page.goto("/");
@@ -13,7 +14,7 @@ export async function openBarovia(page: Page) {
 }
 
 /** Switch the project's tasks to `layout`, grouped by `groupBy`. */
-export async function showTasks(page: Page, layout: "Board" | "Gantt", groupBy = "None") {
+export async function showTasks(page: Page, layout: "Table" | "Board" | "Gantt", groupBy = "None") {
   const menu = page.getByRole("combobox", { name: "Layout" });
   await menu.click();
   await page.getByRole("option", { name: layout }).click();
@@ -26,5 +27,7 @@ export async function showTasks(page: Page, layout: "Board" | "Gantt", groupBy =
 export async function taskSection(page: Page) {
   const heading = page.getByRole("heading", { name: "Project tasks" });
   await heading.evaluate((element) => element.scrollIntoView({ block: "start" }));
-  return heading.locator("xpath=ancestor::*[.//*[@role='treegrid']][1]");
+  return heading.locator(
+    "xpath=ancestor::*[.//*[@role='treegrid'] or .//table or .//button[starts-with(@aria-label, 'Collapse ')]][1]"
+  );
 }

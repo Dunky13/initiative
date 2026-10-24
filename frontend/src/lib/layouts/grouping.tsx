@@ -210,6 +210,10 @@ const builtinMove = (id: string): TaskGrouping["move"] => {
       return (_from, to) => ({ patch: { priority: to as TaskPriority } });
     case "task_type_id":
       return (_from, to) => ({ patch: { task_type_id: Number(to) } });
+    // A band is a task and its parts, so a task dropped into one becomes part
+    // of that task, and dropped out of every band, part of none.
+    case "parent_task_id":
+      return (_from, to) => ({ patch: { parent_task_id: to === NO_GROUP ? null : Number(to) } });
     case "assignee_ids":
       return (from, to) => {
         const { add, remove } = swap(from, to);
@@ -294,6 +298,7 @@ export const offeredGroupings = ({
     const empty = () => {
       if (field.kind === "tag") return label(t("table.untagged"));
       if (field.id === "assignee_ids") return label(t("filters.unassigned"));
+      if (field.id === "parent_task_id") return label(t("table.noParent"));
       return label(t("table.noValue", { name: field.label }));
     };
     const summary = (value: unknown): PropertySummary => {

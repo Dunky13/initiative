@@ -65,6 +65,7 @@ from app.services.tenant import plugin_metadata
 from app.services.tenant import properties as properties_service
 from app.services.tenant import tags as tags_service
 from app.services.tenant import task_checklist as checklist_service
+from app.services.tenant import task_hierarchy
 
 
 def _date_group_expression(tz: str | None = None):
@@ -290,7 +291,8 @@ async def _annotate_tasks(
     comment_counts: dict[int, int] | None = None,
     blocker_counts: dict[int, int] | None = None,
 ) -> None:
-    """Annotate tasks with comment counts, blockers and checklist progress.
+    """Annotate tasks with comment counts, blockers, checklist progress, and
+    their parent and parts (:func:`task_hierarchy.annotate`).
 
     Checklist progress is read from the column the row already carries, so only
     the comment and blocker counts need a query — and passing either in skips
@@ -316,6 +318,7 @@ async def _annotate_tasks(
         )
         blocker_counts = dict((await session.exec(stmt)).all())
 
+    await task_hierarchy.annotate(session, tasks)
     for task in tasks:
         object.__setattr__(task, "comment_count", comment_counts.get(task.id, 0))
         object.__setattr__(

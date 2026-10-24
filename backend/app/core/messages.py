@@ -402,6 +402,8 @@ class TaskMessages:
     INVALID_ASSIGNEE_ID = "TASK_INVALID_ASSIGNEE_ID"
     NOT_REPEATING = "TASK_NOT_REPEATING"
     NO_LATER_OCCURRENCE = "TASK_NO_LATER_OCCURRENCE"
+    #: A task cannot be part of itself or of one of its own parts.
+    PARENT_IS_PART = "TASK_PARENT_IS_PART"
 
 
 class ChecklistMessages:
@@ -409,6 +411,10 @@ class ChecklistMessages:
     DUPLICATE_ITEM_ID = "CHECKLIST_DUPLICATE_ITEM_ID"
     TEXT_EMPTY = "CHECKLIST_TEXT_EMPTY"
     TOO_LONG = "CHECKLIST_TOO_LONG"
+    #: The line names only people or things, which leaves no title for a task.
+    ITEM_UNTITLED = "CHECKLIST_ITEM_UNTITLED"
+    #: The item changed between being read and being made a task.
+    ITEM_CHANGED = "CHECKLIST_ITEM_CHANGED"
 
 
 class TaskStatusMessages:

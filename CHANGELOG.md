@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.77.1] - 2026-10-23
+
+### Added
+
+- **Subtasks in tables and boards.** A table folds each task's subtasks under it, and cards show subtask progress and the task they are part of. Group by **Parent task** for a band per task; drag a card into another band to move it (#2936).
+
+  ![A project table with Survive the Death House open and its three subtasks indented and shaded beneath it](docs/images/releases/subtasks-table.webp)
+  ![A board grouped by parent task: the Death House's band holds it and its subtasks across To Do, In Progress and Done](docs/images/releases/subtasks-board.webp)
+
+- **Make a checklist item a task.** **Make it a task** on a checklist line turns it into a task in the same project, part of the one it came from, and done if it was ticked (#2936).
+- **A new subscription link from Settings.** A calendar subscription under **Settings › Security** offers **Get a new link**, which shows a fresh link to copy; the old one stops working (#2911).
+
+### Fixed
+
+- **Saving a layout again.** **Edit layouts** saves changes to a table, Gantt or calendar layout that was saved before (#2911).
+- **Phones held sideways.** A project's table shows its tasks, and pages use the whole width of the screen.
+- **The calendar's list in your language.** Weekday and month names in the list view follow your language.
+- **Task type icons in project tables.** They show as soon as a project opens and stay steady while you change tasks.
+
 ## [0.77.0] - 2026-10-23
 
 ### Added

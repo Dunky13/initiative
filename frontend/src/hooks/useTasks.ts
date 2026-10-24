@@ -42,6 +42,7 @@ import {
   getReadTaskQueryKey,
   listTasks,
   moveTask,
+  promoteChecklistItem,
   readTask,
   reorderTasks,
   skipTask,
@@ -459,7 +460,11 @@ export const useMoveTaskToGroup = () =>
       }
       return setProperties(communityId, PropertyTarget.task, taskId, move.properties);
     },
-    invalidate: (_data, { taskId }) => invalidate(q.allTasks(), q.task(taskId)),
+    // A new parent is a link, which the Gantt and a task's links read.
+    invalidate: (_data, { taskId, move }) =>
+      "patch" in move && "parent_task_id" in move.patch
+        ? invalidate(q.allTasks(), q.task(taskId), q.relationships())
+        : invalidate(q.allTasks(), q.task(taskId)),
     errorKey: "projects:table.moveError",
   });
 
@@ -666,6 +671,22 @@ export const useToggleChecklistItem = (
         void invalidate(q.task(taskId), q.allTasks());
       },
       errorKey: "tasks:checklist.updateError",
+    },
+    options
+  );
+
+/** Make a checklist item a task of its own, part of the task it was on. */
+export const usePromoteChecklistItem = (
+  options?: MutationOpts<TaskRead, { taskId: number; itemId: string }>
+) =>
+  useCommunityMutation<TaskRead, { taskId: number; itemId: string }>(
+    {
+      mutationFn: (communityId, { taskId, itemId }) =>
+        promoteChecklistItem(communityId, taskId, itemId),
+      invalidate: (_data, { taskId }) => {
+        void invalidate(q.task(taskId), q.allTasks(), q.relationships());
+      },
+      errorKey: "tasks:checklist.promoteError",
     },
     options
   );

@@ -385,6 +385,9 @@ const TaskDragOverlay = ({ task, card }: { task: TaskListRead; card: LayoutNode 
         ) : null}
       </div>
       {shows("checklist") ? <TaskChecklistProgress progress={task.checklist_progress} /> : null}
+      {shows("subtasks") ? (
+        <TaskChecklistProgress of="subtasks" progress={task.subtask_progress} />
+      ) : null}
       {shows("priority") ? (
         <Badge variant={priorityVariant[task.priority]}>
           {t("kanban.priority", { priority: task.priority.replace("_", " ") })}

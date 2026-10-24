@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import type { LucideIcon } from "lucide-react";
+import { CornerLeftUp, type LucideIcon } from "lucide-react";
 import { type ComponentType, memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -10,6 +10,7 @@ import type {
   TagSummary,
   TaskAssigneeSummary,
   TaskListRead,
+  TaskParentSummary,
   TaskPriority,
   TaskTypeRead,
 } from "@/api/generated/initiativeAPI.schemas";
@@ -18,6 +19,7 @@ import { priorityVariant } from "@/components/projects/projectTasksConfig";
 import { TaskAssigneeList, TaskAssigneeStack } from "@/components/projects/TaskAssigneeList";
 import { TaskBlockersHoverCard } from "@/components/projects/TaskBlockersHoverCard";
 import { TaskDescriptionHoverCard } from "@/components/projects/TaskDescriptionHoverCard";
+import { TaskSubtasksHoverCard } from "@/components/projects/TaskSubtasksHoverCard";
 import { PropertyValueCell } from "@/components/properties/PropertyValueCell";
 import { TagBadge } from "@/components/tags";
 import { TagBadgeList } from "@/components/tags/TagBadge";
@@ -31,6 +33,7 @@ import { useCommunityPath } from "@/lib/communityUrl";
 import { formatDateTime } from "@/lib/formatDate";
 import { summarizeStored } from "@/lib/recurrence";
 import { truncateText } from "@/lib/text";
+import { entityRefRoute } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 import type { TranslateFn } from "@/types/i18n";
 
@@ -50,6 +53,8 @@ export type FieldKind =
   | "date"
   | "recurrence"
   | "checklist"
+  | "subtasks"
+  | "parent"
   | "priority"
   | "count"
   | "tags"
@@ -168,10 +173,11 @@ const TitleCell = ({
       )
     : null;
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex w-full min-w-60 flex-col items-start text-left">
-        <div className="flex items-center gap-1.5">
-          {type ? <TaskTypeMark type={type} /> : null}
+    <div className="flex w-full min-w-60 items-center gap-2">
+      <div className="flex min-w-0 flex-1 flex-col items-start text-left">
+        <div className="flex items-start gap-1.5">
+          {/* One line of the title tall, so it sits on the first line's middle. */}
+          {type ? <TaskTypeMark type={type} className="h-lh" /> : null}
           <Link
             to={env.taskHref(task)}
             draggable={false}
@@ -186,6 +192,7 @@ const TitleCell = ({
         ) : null}
         <TaskChecklistProgress progress={task.checklist_progress} className="mt-2 max-w-[200px]" />
       </div>
+      <TaskSubtasksHoverCard task={task} />
       <TaskBlockersHoverCard task={task} />
       <TaskDescriptionHoverCard task={task} />
     </div>
@@ -281,6 +288,41 @@ const ChecklistField = ({ value }: FieldRendererProps) => (
   <TaskChecklistProgress progress={value as ChecklistProgress} className="w-full pt-1" />
 );
 
+const SubtasksField = ({ value }: FieldRendererProps) => (
+  <TaskChecklistProgress
+    of="subtasks"
+    progress={value as ChecklistProgress}
+    className="w-full min-w-24 pt-1"
+  />
+);
+
+// The task this one is part of, as a link to it: on a card a line above what
+// the card says, in a cell its name.
+const ParentField = ({ value, item, variant, env }: FieldRendererProps) => {
+  const parent = value as TaskParentSummary | null;
+  if (!parent) {
+    return variant === "cell" ? (
+      <span className="text-muted-foreground text-sm">&mdash;</span>
+    ) : null;
+  }
+  return (
+    <Link
+      // By the task alone: a parent may be in another of the initiative's
+      // projects, which a project's own task links would name wrongly.
+      to={env.communityPath(entityRefRoute("task", parent.id), item)}
+      draggable={false}
+      title={env.t("tasks:subtasks.partOf", { title: parent.title })}
+      className={cn(
+        "flex min-w-0 max-w-full items-center gap-1 rounded-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-1 focus-visible:ring-ring",
+        variant === "cell" ? "text-sm" : "text-xs"
+      )}
+    >
+      <CornerLeftUp className="h-3 w-3 shrink-0" aria-hidden="true" />
+      <span className="truncate">{parent.title}</span>
+    </Link>
+  );
+};
+
 const PriorityField = ({ value, field, env }: FieldRendererProps) => {
   const priority = value as TaskPriority;
   const text = priority.replace("_", " ");
@@ -362,6 +404,8 @@ export const FIELD_RENDERERS: Record<FieldKind, ComponentType<FieldRendererProps
   date: memo(DateField),
   recurrence: memo(RecurrenceField),
   checklist: memo(ChecklistField),
+  subtasks: memo(SubtasksField),
+  parent: memo(ParentField),
   priority: memo(PriorityField),
   count: memo(CountField),
   tags: memo(TagsField),

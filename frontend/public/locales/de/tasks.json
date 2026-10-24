@@ -157,7 +157,20 @@
     "progress_one": "{{completed}}/{{total}} Element",
     "progress_other": "{{completed}}/{{total}} Elemente",
     "expandItem": "Ganzen Eintrag anzeigen",
-    "collapseItem": "Weniger anzeigen"
+    "collapseItem": "Weniger anzeigen",
+    "promote": "Zur Aufgabe machen",
+    "promoteLabel": "Diesen Checklistenpunkt zur Aufgabe machen",
+    "promoted": "Als Unteraufgabe dieser Aufgabe angelegt",
+    "openPromoted": "Öffnen",
+    "promoteError": "Der Punkt konnte nicht zur Aufgabe gemacht werden. Bitte versuche es erneut."
+  },
+  "subtasks": {
+    "progressLabel": "Fortschritt der Unteraufgaben",
+    "progress_one": "{{completed}}/{{total}} Unteraufgabe",
+    "progress_other": "{{completed}}/{{total}} Unteraufgaben",
+    "partOf": "Teil von {{title}}",
+    "fold": "Unteraufgaben von {{title}} ausblenden",
+    "unfold": "Unteraufgaben von {{title}} einblenden"
   },
   "prioritySelector": {
     "ariaLabel": "Priorität: {{priority}}. Klicke zum Ändern.",

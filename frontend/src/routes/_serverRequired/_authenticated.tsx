@@ -445,9 +445,14 @@ export function AppLayout() {
                     <div
                       className={cn(
                         // The page area: what a page's canvas-sm: and its
-                        // siblings measure, sidebar or not.
+                        // siblings measure, sidebar or not. Below md nothing
+                        // sits beside it, so it takes the whole width: the
+                        // container's sm: step held a landscape phone to
+                        // 600px between wide empty margins.
                         "@container grid min-h-full grid-cols-[minmax(0,1fr)] grid-rows-[1fr]",
-                        fullBleed ? "pb-16 md:pb-0" : "container mx-auto p-4 pb-24 md:p-8 md:pb-24"
+                        fullBleed
+                          ? "pb-16 md:pb-0"
+                          : "container mx-auto p-4 pb-24 max-md:max-w-none md:p-8 md:pb-24"
                       )}
                     >
                       <Suspense fallback={<PageLoader />}>
@@ -592,7 +597,7 @@ function NoCommunitySettingsShell({ logout }: { logout: () => void }) {
           </Button>
         </div>
       </div>
-      <main className="container mx-auto min-w-0 p-4 pb-20 md:p-8 md:pb-20">
+      <main className="container mx-auto min-w-0 p-4 pb-20 max-md:max-w-none md:p-8 md:pb-20">
         <Suspense fallback={<PageLoader />}>
           <Outlet />
         </Suspense>

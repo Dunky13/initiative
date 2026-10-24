@@ -116,6 +116,10 @@ interface DataTableProps<TData extends RowData> {
   enableRowSelection?: boolean;
   onRowSelectionChange?: (selectedRows: TData[]) => void;
   getRowId?: (row: TData) => string;
+  /** The rows nested under a row, drawn under it and folded with it. A row
+   *  selects only itself, stays folded across new data, and the filter keeps
+   *  a row any of whose nested rows match. */
+  getSubRows?: (row: TData) => TData[] | undefined;
   /** A row (by `getRowId`) kept first whatever the sort; the rest sort as
    *  asked beneath it. */
   pinnedRowId?: string;
@@ -196,6 +200,7 @@ export function DataTable<TData extends RowData>({
   enableRowSelection = false,
   onRowSelectionChange,
   getRowId,
+  getSubRows,
   pinnedRowId,
   onExitSelection,
   manualPagination = false,
@@ -403,6 +408,17 @@ export function DataTable<TData extends RowData>({
     onRowSelectionChange: enableRowSelection ? setRowSelection : undefined,
     enableRowSelection: enableRowSelection,
     getRowId: getRowId,
+    getSubRows,
+    ...(getSubRows
+      ? {
+          filterFromLeafRows: true,
+          // A row folded stays folded when the rows arrive again, as a list
+          // that refreshes in the background does.
+          autoResetExpanded: false,
+          // A group's header still selects its rows.
+          enableSubRowSelection: (row: AppRow<TData>) => row.getIsGrouped(),
+        }
+      : {}),
     // Row models are registered once in `appTableFeatures`; a stage is turned
     // off per-instance through its `manual*` option, which is where the
     // row-model pipeline short-circuits. Callers that don't paginate need that
@@ -580,7 +596,10 @@ export function DataTable<TData extends RowData>({
       // Limitation: under manualPagination only the current page is in `data`,
       // so selections on other pages remain in rowSelection (by id) but can't be
       // reported as row objects; cross-page selection is out of scope.
-      const selectedRows = tableRef.current.getSelectedRowModel().rows.map((row) => row.original);
+      // Every selected row, nested ones included.
+      const selectedRows = tableRef.current
+        .getSelectedRowModel()
+        .flatRows.map((row) => row.original);
       onRowSelectionChange(selectedRows);
     }
   }, [
@@ -1154,7 +1173,8 @@ function GroupedRow<TData extends RowData>({
 
 /**
  * Memoized cell content for virtual rows. Only re-renders when the underlying
- * row data or selection state changes — NOT on every scroll position update.
+ * row data, its selection, whether it is open or the columns change — NOT on
+ * every scroll position update.
  * This is the key performance optimization: cell renderers (Select, Checkbox,
  * TagBadge, etc.) are expensive and shouldn't run on every scroll frame.
  */
@@ -1167,6 +1187,12 @@ const MemoizedVirtualCells = memo(
     row: AppRow<Record<string, unknown>>;
     visibleColumnKey: string;
     isSelected: boolean;
+    /** Read only by the comparison: a row's fold control draws whether it is open. */
+    isExpanded: boolean;
+    /** Read only by the comparison: the cells draw what the columns say, and
+     *  a caller's columns change with what they draw (a project's types
+     *  arriving, say). */
+    columns: unknown;
   }) {
     return (
       <>
@@ -1181,6 +1207,8 @@ const MemoizedVirtualCells = memo(
   (prev, next) =>
     prev.row.original === next.row.original &&
     prev.isSelected === next.isSelected &&
+    prev.isExpanded === next.isExpanded &&
+    prev.columns === next.columns &&
     prev.visibleColumnKey === next.visibleColumnKey
 );
 
@@ -1220,6 +1248,8 @@ function VirtualRow<TData extends RowData>({
       row={row as unknown as AppRow<Record<string, unknown>>}
       visibleColumnKey={visibleColumnKey}
       isSelected={row.getIsSelected()}
+      isExpanded={row.getIsExpanded()}
+      columns={row.table.options.columns}
     />
   );
 

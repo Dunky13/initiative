@@ -781,5 +781,8 @@
   "DEMO_PITCH_HELD": "This pitch holds content under review, so it can't be deleted yet.",
   "DEMO_PERSONA_TAKEN": "That handle belongs to a real account.",
   "DEMO_LINK_EXPIRY_INVALID": "A demo link can't end in the past.",
-  "INVALID_RECURRENCE_LIMIT": "A daily maximum requires an hourly repeat after completion and a due date. Enter a whole maximum from 1 to 24, or leave it blank."
+  "INVALID_RECURRENCE_LIMIT": "A daily maximum requires an hourly repeat after completion and a due date. Enter a whole maximum from 1 to 24, or leave it blank.",
+  "TASK_PARENT_IS_PART": "A task can't be part of itself or of one of its own subtasks.",
+  "CHECKLIST_ITEM_UNTITLED": "That item names only people or links, so it has nothing to call a task.",
+  "CHECKLIST_ITEM_CHANGED": "That item changed while it was being made a task. Look it over and try again."
 }

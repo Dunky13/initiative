@@ -634,7 +634,10 @@ describe("LayoutEditor", () => {
       const card = saved("board")?.card;
       // Into the row the title shares with its type's icon.
       const first = (card as LayoutNode | undefined)?.children?.[0] as LayoutNode | undefined;
-      expect((first?.children?.[0] as LayoutNode | undefined)?.children).toEqual([
+      const row = first?.children?.find((node) =>
+        (node as LayoutNode).children?.some((child) => child.props?.field === "title")
+      ) as LayoutNode | undefined;
+      expect(row?.children).toEqual([
         { type: "field", props: { field: "type" } },
         { type: "field", props: { field: "priority" } },
         { type: "field", props: { field: "title" } },

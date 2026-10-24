@@ -285,6 +285,8 @@ export const projectListingBoard = (
         completed: task.checklist.filter((item) => item.done).length,
         total: task.checklist.length,
       },
+      parent: null,
+      subtask_progress: null,
       // A tag chip opens the community's own tag, and a listing's has none yet.
       tags: [],
       properties: task.properties.flatMap(summaryOf),

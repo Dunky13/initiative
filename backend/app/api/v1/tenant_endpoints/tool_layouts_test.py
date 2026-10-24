@@ -708,6 +708,57 @@ async def test_a_layout_is_refused_unless_every_part_is_one_we_draw(
         assert response.json()["params"] == {"max": str(MAX_PLUGIN_PARTS)}
 
 
+@pytest.mark.parametrize(
+    ("kind", "definition"),
+    [
+        (
+            "table",
+            {
+                "groupings": [{"field": "date_group"}, {"field": "tag_ids"}],
+                "group_by": "tag_ids",
+            },
+        ),
+        ("board", {"limits": [{"status_id": 1, "limit": 3}]}),
+        ("gantt", {"groupings": [{"field": "assignee_ids"}]}),
+        ("calendar", {"hidden": True}),
+    ],
+)
+async def test_a_layout_read_back_saves_again(
+    client: AsyncClient, acting_user, kind: str, definition: dict[str, Any]
+):
+    """The editor sends a layout back as it read it, nulls and all: a table's
+    ``limits``, a calendar's ``groupings``. Each is what it leaves out (#2911)."""
+    a = await acting_user(
+        guild_role=CommunityRole.member, initiative=True, project=True
+    )
+    url = a.g("/layouts/")
+    saved = await client.put(
+        url,
+        params=_project(a),
+        json={"kind": kind, "definition": definition},
+        headers=a.headers,
+    )
+    assert saved.status_code == 200, saved.text
+    read = next(layout for layout in saved.json()["layouts"] if layout["kind"] == kind)[
+        "definition"
+    ]
+    if "groupings" in definition:
+        read["groupings"].reverse()
+
+    again = await client.put(
+        url,
+        params=_project(a),
+        json={"kind": kind, "definition": read},
+        headers=a.headers,
+    )
+
+    assert again.status_code == 200, again.text
+    layout = next(
+        layout for layout in again.json()["layouts"] if layout["kind"] == kind
+    )
+    assert layout["definition"] == read
+
+
 async def test_a_list_offers_the_presets_it_keeps(client: AsyncClient, acting_user):
     a = await acting_user(
         guild_role=CommunityRole.member, initiative=True, project=True
